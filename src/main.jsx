@@ -31,13 +31,12 @@ function SashaAI() {
         sender: "Sasha",
         text: data.reply
       }]);
-    } catch (error) {
+        } catch (error) {
       setMessages(prev => [...prev, {
         sender: "Sasha",
-        text: "I'm having trouble connecting. Please try again."
+        text: "Connection error: " + error.message
       }]);
     }
-
     setLoading(false);
   }
 
