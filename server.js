@@ -1,3 +1,4 @@
+
 const express = require("express");
 const path = require("path");
 
@@ -25,7 +26,7 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
       process.env.GEMINI_API_KEY,
       {
         method: "POST",
@@ -56,7 +57,9 @@ app.post("/api/chat", async (req, res) => {
     }
 
     res.json({
-      reply: data.candidates?.[0]?.content?.parts?.[0]?.text || "Try again, please."
+      reply:
+        data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        "Try again, please."
     });
 
   } catch (error) {
