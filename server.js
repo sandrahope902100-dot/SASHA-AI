@@ -8,11 +8,30 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 app.post("/api/chat", async (req, res) => {
   try {
+    const message = req.body?.message;
+
+    if (!message) {
+      return res.status(400).json({
+        error: "Please enter a message."
+      });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is missing!");
+
+      return res.status(500).json({
+        error: "Sasha's API key is not configured."
+      });
+    }
+
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + process.env.GEMINI_API_KEY,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+      process.env.GEMINI_API_KEY,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({
           systemInstruction: {
             parts: [{
@@ -20,7 +39,7 @@ app.post("/api/chat", async (req, res) => {
             }]
           },
           contents: [{
-            parts: [{ text: req.body.message }]
+            parts: [{ text: message }]
           }]
         })
       }
@@ -29,6 +48,8 @@ app.post("/api/chat", async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error("Gemini API error:", data.error?.message);
+
       return res.status(response.status).json({
         error: data.error?.message || "Gemini connection failed."
       });
@@ -39,7 +60,11 @@ app.post("/api/chat", async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({ error: "Unable to connect to Sasha AI." });
+    console.error("Sasha server error:", error);
+
+    res.status(500).json({
+      error: error.message || "Unable to connect to Sasha AI."
+    });
   }
 });
 
@@ -48,4 +73,7 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Sasha AI is running!"));
+
+app.listen(PORT, () => {
+  console.log("Sasha AI is running!");
+});
