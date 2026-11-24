@@ -1,16 +1,44 @@
+
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 
 function SashaAI() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  function sendMessage(e) {
+  async function sendMessage(e) {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() || loading) return;
 
-    setMessages([...messages, { text: message, sender: "You" }]);
+    const userMessage = message;
+    setMessages(prev => [...prev, { sender: "You", text: userMessage }]);
     setMessage("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error);
+
+      setMessages(prev => [...prev, {
+        sender: "Sasha",
+        text: data.reply
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        sender: "Sasha",
+        text: "I'm having trouble connecting. Please try again."
+      }]);
+    }
+
+    setLoading(false);
   }
 
   return (
@@ -33,12 +61,15 @@ function SashaAI() {
         minHeight: "300px",
         textAlign: "left"
       }}>
-        <p style={{color: "#38bdf8"}}>Sasha:</p>
-        <p>Hello! I'm Sasha. How can I help you today?</p>
+        <p style={{color: "#38bdf8"}}>
+          Sasha: Hello! I'm Sasha. How can I help you today?
+        </p>
 
         {messages.map((m, i) => (
           <p key={i}><b>{m.sender}:</b> {m.text}</p>
         ))}
+
+        {loading && <p>Sasha is thinking...</p>}
       </div>
 
       <form onSubmit={sendMessage} style={{marginTop: "20px"}}>
@@ -48,7 +79,7 @@ function SashaAI() {
           placeholder="Talk to Sasha..."
           style={{padding: "14px", width: "65%", borderRadius: "10px"}}
         />
-        <button style={{
+        <button disabled={loading} style={{
           padding: "14px",
           background: "#0284c7",
           color: "white",
