@@ -21,7 +21,7 @@ async function askGemini(message) {
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 45000);
 
     try {
       const response = await fetch(url, {
