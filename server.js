@@ -7,7 +7,10 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "dist")));
 
-const MODEL = "gemini-3.8-flash";
+const MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.5-flash-lite"
+];
 
 const SASHA_INSTRUCTIONS = `
 You are Sasha AI, a smart, friendly Jamaican female AI assistant.
@@ -30,13 +33,126 @@ INTELLIGENCE:
 - Never invent facts, sources, capabilities or actions.
 - Be honest when you do not know something.
 
-Keep ordinary answers concise, but give detail when it is needed.
+Keep ordinary answers concise, but give detail when needed.
 Your name is Sasha AI.
 `;
 
 function sendEvent(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function getGeminiResponse(apiKey, contents, signal) {
+  let lastError = null;
+
+  for (let modelIndex = 0; modelIndex < MODELS.length; modelIndex++) {
+    const model = MODELS[modelIndex];
+
+    // Retry the primary model once on 503.
+    // Try the backup model once.
+    const attempts = modelIndex === 0 ? 2 : 1;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (signal.aborted) {
+        throw new Error("Request cancelled.");
+      }
+
+      console.log(
+        `Trying ${model}, attempt ${attempt}`
+      );
+
+      try {
+        const url =
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
+
+        const response = await fetch(url, {
+          method: "POST",
+          signal,
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: SASHA_INSTRUCTIONS }]
+            },
+            contents,
+            generationConfig: {
+              maxOutputTokens: 600,
+              temperature: 0.7
+            }
+          })
+        });
+
+        if (response.ok) {
+          console.log(`Using model: ${model}`);
+          return response;
+        }
+
+        const detail = await response.text();
+
+        console.error(
+          `Gemini ${model} error:`,
+          response.status,
+          detail
+        );
+
+        lastError = {
+          status: response.status,
+          detail
+        };
+
+        // Only switch models for temporary capacity errors.
+        if (response.status !== 503) {
+          throw new Error(
+            `Gemini returned HTTP ${response.status}.`
+          );
+        }
+
+        if (attempt < attempts) {
+          await wait(800);
+        }
+
+      } catch (error) {
+        if (signal.aborted || error.name === "AbortError") {
+          throw error;
+        }
+
+        if (error.message.startsWith("Gemini returned HTTP")) {
+          throw error;
+        }
+
+        console.error(
+          `Connection problem with ${model}:`,
+          error.message
+        );
+
+        lastError = {
+          status: 503,
+          detail: error.message
+        };
+
+        if (attempt < attempts) {
+          await wait(800);
+        }
+      }
+    }
+
+    console.log(
+      `${model} unavailable. Checking next model.`
+    );
+  }
+
+  const error = new Error(
+    "Both Gemini models are temporarily unavailable. Please try again shortly."
+  );
+
+  error.status = lastError?.status || 503;
+  throw error;
 }
 
 app.post("/api/chat", async (req, res) => {
@@ -69,63 +185,44 @@ app.post("/api/chat", async (req, res) => {
       parts: [{ text: item.text.trim().slice(0, 6000) }]
     }));
 
-  if (!contents.length || contents[contents.length - 1].role !== "user") {
+  if (
+    !contents.length ||
+    contents[contents.length - 1].role !== "user"
+  ) {
     return res.status(400).json({
       error: "Your latest message is missing."
     });
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+
+  const timeout = setTimeout(
+    () => controller.abort(),
+    45000
+  );
 
   res.on("close", () => {
-    if (!res.writableEnded) controller.abort();
+    if (!res.writableEnded) {
+      controller.abort();
+    }
   });
 
   try {
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: SASHA_INSTRUCTIONS }]
-        },
-        contents,
-        generationConfig: {
-          maxOutputTokens: 600,
-          temperature: 0.7
-        }
-      })
-    });
-
-    if (!response.ok) {
-      const detail = await response.text();
-      console.error("Gemini error:", response.status, detail);
-
-      if (!res.headersSent) {
-        return res.status(response.status).json({
-          error: response.status === 429
-            ? "Sasha is receiving too many requests. Please wait a moment and try again."
-            : "Sasha couldn't get an answer from Gemini. Please try again."
-        });
-      }
-
-      sendEvent(res, "error", {
-        error: "Sasha couldn't finish generating her answer."
-      });
-      return res.end();
-    }
+    const response = await getGeminiResponse(
+      apiKey,
+      contents,
+      controller.signal
+    );
 
     res.status(200);
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader(
+      "Content-Type",
+      "text/event-stream; charset=utf-8"
+    );
+    res.setHeader(
+      "Cache-Control",
+      "no-cache, no-transform"
+    );
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
@@ -150,7 +247,9 @@ app.post("/api/chat", async (req, res) => {
 
       try {
         const chunk = JSON.parse(raw);
-        const parts = chunk.candidates?.[0]?.content?.parts || "";
+
+        const parts =
+          chunk.candidates?.[0]?.content?.parts || [];
 
         const text = Array.isArray(parts)
           ? parts.map(part => part.text || "").join("")
@@ -158,10 +257,16 @@ app.post("/api/chat", async (req, res) => {
 
         if (text) {
           fullReply += text;
-          sendEvent(res, "token", { text });
+
+          sendEvent(res, "token", {
+            text
+          });
         }
       } catch (error) {
-        console.error("Gemini stream parsing error:", error.message);
+        console.error(
+          "Gemini stream parsing error:",
+          error.message
+        );
       }
     }
 
@@ -170,7 +275,9 @@ app.post("/api/chat", async (req, res) => {
 
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, {
+        stream: true
+      });
 
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
@@ -199,18 +306,23 @@ app.post("/api/chat", async (req, res) => {
     res.end();
 
   } catch (error) {
-    console.error("Gemini request failed:", error.message);
+    console.error(
+      "Gemini request failed:",
+      error.message
+    );
 
     if (!res.headersSent) {
-      res.status(503).json({
+      res.status(error.status || 503).json({
         error: error.name === "AbortError"
           ? "Sasha's response took too long. Please try again."
-          : "Sasha couldn't connect to Gemini. Please try again."
+          : error.message ||
+            "Sasha couldn't connect to Gemini."
       });
     } else if (!res.writableEnded) {
       sendEvent(res, "error", {
         error: "Sasha lost connection while answering."
       });
+
       res.end();
     }
   } finally {
@@ -218,22 +330,28 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Fish Audio: stream audio bytes directly to the browser.
+// FISH AUDIO VOICE SERVICE
 app.get("/api/speech", async (req, res) => {
   const apiKey = process.env.FISH_AUDIO_API_KEY;
   const voiceId = process.env.FISH_AUDIO_VOICE_ID;
   const text = req.query?.text;
 
   if (!apiKey || !voiceId) {
-    return res.status(500).send("Sasha's voice settings are not configured.");
+    return res.status(500).send(
+      "Sasha's voice settings are not configured."
+    );
   }
 
   if (typeof text !== "string" || !text.trim()) {
-    return res.status(400).send("No speech text was provided.");
+    return res.status(400).send(
+      "No speech text was provided."
+    );
   }
 
   if (text.length > 4000) {
-    return res.status(400).send("The speech text is too long.");
+    return res.status(400).send(
+      "The speech text is too long."
+    );
   }
 
   const controller = new AbortController();
@@ -241,25 +359,33 @@ app.get("/api/speech", async (req, res) => {
   res.on("close", () => controller.abort());
 
   try {
-    const response = await fetch("https://api.fish.audio/v1/tts", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "model": "s2.1-pro-free"
-      },
-      body: JSON.stringify({
-        text: text.trim(),
-        reference_id: voiceId,
-        format: "mp3",
-        latency: "balanced"
-      })
-    });
+    const response = await fetch(
+      "https://api.fish.audio/v1/tts",
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "model": "s2.1-pro-free"
+        },
+        body: JSON.stringify({
+          text: text.trim(),
+          reference_id: voiceId,
+          format: "mp3",
+          latency: "balanced"
+        })
+      }
+    );
 
     if (!response.ok) {
       const detail = await response.text();
-      console.error("Fish Audio error:", response.status, detail);
+
+      console.error(
+        "Fish Audio error:",
+        response.status,
+        detail
+      );
 
       if (!res.headersSent) {
         return res.status(502).send(
@@ -283,7 +409,9 @@ app.get("/api/speech", async (req, res) => {
       if (done) break;
 
       if (!res.write(Buffer.from(value))) {
-        await new Promise(resolve => res.once("drain", resolve));
+        await new Promise(resolve =>
+          res.once("drain", resolve)
+        );
       }
     }
 
@@ -291,7 +419,10 @@ app.get("/api/speech", async (req, res) => {
 
   } catch (error) {
     if (error.name !== "AbortError") {
-      console.error("Fish Audio speech error:", error.message);
+      console.error(
+        "Fish Audio speech error:",
+        error.message
+      );
 
       if (!res.headersSent) {
         res.status(503).send(
@@ -305,12 +436,15 @@ app.get("/api/speech", async (req, res) => {
 });
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
+  res.sendFile(
+    path.join(__dirname, "dist", "index.html")
+  );
 });
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Sasha AI is running on port ${PORT}`);
+  console.log(
+    `Sasha AI is running on port ${PORT}`
+  );
 });
-
