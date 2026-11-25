@@ -20,7 +20,6 @@ function SashaAI() {
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
-  const audioUrlRef = useRef(null);
   const voiceRequestRef = useRef(0);
 
   useEffect(() => {
@@ -35,10 +34,7 @@ function SashaAI() {
 
       if (audioRef.current) {
         audioRef.current.pause();
-      }
-
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
+        audioRef.current.src = "";
       }
     };
   }, []);
@@ -48,60 +44,28 @@ function SashaAI() {
 
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+      audioRef.current.src = "";
       audioRef.current = null;
-    }
-
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
     }
 
     setSpeaking(false);
   }
 
   async function speak(text) {
-    if (!voiceEnabled) return;
+    if (!voiceEnabled || !text.trim()) return;
 
     stopSpeaking();
 
     const requestId = voiceRequestRef.current;
-
     setVoiceError("");
 
     try {
-      const response = await fetch("/api/speech", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ text })
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-
-        throw new Error(
-          data.error || `Voice server error: ${response.status}`
-        );
-      }
-
-      const audioBlob = await response.blob();
-
-      if (requestId !== voiceRequestRef.current) return;
-
-      if (!audioBlob.size) {
-        throw new Error("Sasha received an empty audio file.");
-      }
-
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      audioUrlRef.current = audioUrl;
+      const audioUrl =
+        "/api/speech?text=" + encodeURIComponent(text);
 
       const audio = new Audio(audioUrl);
-
       audioRef.current = audio;
-      audio.preload = "auto";
+      audio.preload = "none";
 
       audio.onplay = () => {
         if (requestId === voiceRequestRef.current) {
@@ -112,8 +76,6 @@ function SashaAI() {
 
       audio.onended = () => {
         if (requestId === voiceRequestRef.current) {
-          URL.revokeObjectURL(audioUrl);
-          audioUrlRef.current = null;
           audioRef.current = null;
           setSpeaking(false);
         }
@@ -121,11 +83,11 @@ function SashaAI() {
 
       audio.onerror = () => {
         if (requestId === voiceRequestRef.current) {
-          URL.revokeObjectURL(audioUrl);
-          audioUrlRef.current = null;
           audioRef.current = null;
-          setVoiceError("Sasha's audio could not be played.");
           setSpeaking(false);
+          setVoiceError(
+            "Sasha's audio could not be played. Check the voice service."
+          );
         }
       };
 
@@ -135,11 +97,9 @@ function SashaAI() {
       if (requestId !== voiceRequestRef.current) return;
 
       console.error("Sasha voice error:", error);
-
       setVoiceError(
         error.message || "Sasha couldn't play her voice."
       );
-
       setSpeaking(false);
     }
   }
@@ -180,7 +140,9 @@ function SashaAI() {
     recognition.onstart = () => setListening(true);
 
     recognition.onresult = event => {
-      const transcript = event.results[0][0].transcript;
+      const transcript =
+        event.results[0][0].transcript;
+
       setMessage(transcript);
       setListening(false);
     };
@@ -201,14 +163,19 @@ function SashaAI() {
 
     stopSpeaking();
     setVoiceError("");
+    setMessage("");
+    setLoading(true);
+
+    const history = [
+      ...messages.filter(item => item.text?.trim()),
+      { role: "user", text }
+    ].slice(-20);
 
     setMessages(prev => [
       ...prev,
-      { role: "user", text }
+      { role: "user", text },
+      { role: "assistant", text: "" }
     ]);
-
-    setMessage("");
-    setLoading(true);
 
     try {
       const response = await fetch("/api/chat", {
@@ -216,48 +183,159 @@ function SashaAI() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({
+          messages: history
+        })
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
         throw new Error(
           data.error || "Sasha is temporarily unavailable."
         );
       }
 
-      const reply =
-        data.reply || "I couldn't generate a reply. Try again.";
+      if (!response.body) {
+        throw new Error("Your browser could not receive Sasha's response.");
+      }
 
-      setMessages(prev => [
-        ...prev,
-        { role: "assistant", text: reply }
-      ]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      let buffer = "";
+      let reply = "";
+      let streamError = "";
+
+      function processBlock(block) {
+        let eventName = "message";
+        const dataLines = [];
+
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trim());
+          }
+        }
+
+        if (!dataLines.length) return;
+
+        let data;
+
+        try {
+          data = JSON.parse(dataLines.join("\n"));
+        } catch {
+          return;
+        }
+
+        if (eventName === "token" && data.text) {
+          reply += data.text;
+
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated.length - 1;
+
+            if (updated[last]?.role === "assistant") {
+              updated[last] = {
+                ...updated[last],
+                text: reply
+              };
+            }
+
+            return updated;
+          });
+        }
+
+        if (eventName === "error") {
+          streamError =
+            data.error || "Sasha couldn't finish her answer.";
+        }
+
+        if (eventName === "done" && data.reply) {
+          reply = data.reply;
+
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated.length - 1;
+
+            if (updated[last]?.role === "assistant") {
+              updated[last] = {
+                ...updated[last],
+                text: reply
+              };
+            }
+
+            return updated;
+          });
+        }
+      }
+
+      while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
+
+        for (const block of blocks) {
+          processBlock(block);
+        }
+      }
+
+      buffer += decoder.decode();
+
+      if (buffer.trim()) {
+        processBlock(buffer);
+      }
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
+
+      if (!reply.trim()) {
+        throw new Error("Sasha returned an empty answer. Please try again.");
+      }
 
       if (voiceEnabled) {
         speak(reply);
       }
 
     } catch (error) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: "assistant",
-          text:
-            error.message ||
-            "I couldn't connect just now. Please try again."
+      console.error("Sasha chat error:", error);
+
+      setMessages(prev => {
+        const updated = [...prev];
+
+        if (
+          updated.length &&
+          updated[updated.length - 1].role === "assistant" &&
+          !updated[updated.length - 1].text
+        ) {
+          updated[updated.length - 1] = {
+            role: "assistant",
+            text: error.message ||
+              "I couldn't connect just now. Please try again."
+          };
+        } else {
+          updated.push({
+            role: "assistant",
+            text: error.message ||
+              "I couldn't connect just now. Please try again."
+          });
         }
-      ]);
+
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
   }
 
   const styles = `
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -272,11 +350,7 @@ function SashaAI() {
       flex-direction: column;
       max-width: 850px;
       margin: auto;
-      background: radial-gradient(
-        circle at top,
-        #142844,
-        #080e19 58%
-      );
+      background: radial-gradient(circle at top, #142844, #080e19 58%);
     }
 
     .header {
@@ -301,13 +375,7 @@ function SashaAI() {
       width: 47px;
       height: 47px;
       border-radius: 50%;
-      background: radial-gradient(
-        circle at 35% 30%,
-        #fff,
-        #54caff 35%,
-        #1760a9 70%,
-        #101d35
-      );
+      background: radial-gradient(circle at 35% 30%, #fff, #54caff 35%, #1760a9 70%, #101d35);
       box-shadow: 0 0 20px #299bff88;
     }
 
@@ -396,11 +464,7 @@ function SashaAI() {
     }
 
     .user .bubble {
-      background: linear-gradient(
-        135deg,
-        #1769a9,
-        #17477c
-      );
+      background: linear-gradient(135deg, #1769a9, #17477c);
       border: 1px solid #398bd0;
       border-bottom-right-radius: 4px;
     }
@@ -481,11 +545,7 @@ function SashaAI() {
 
     .send {
       color: white;
-      background: linear-gradient(
-        135deg,
-        #168de0,
-        #2454a0
-      );
+      background: linear-gradient(135deg, #168de0, #2454a0);
       font-size: 14px;
       font-weight: bold;
     }
@@ -507,17 +567,9 @@ function SashaAI() {
     }
 
     @media (max-width: 480px) {
-      .brand h1 {
-        font-size: 17px;
-      }
-
-      .welcome h2 {
-        font-size: 21px;
-      }
-
-      .bubble {
-        max-width: 90%;
-      }
+      .brand h1 { font-size: 17px; }
+      .welcome h2 { font-size: 21px; }
+      .bubble { max-width: 90%; }
     }
   `;
 
@@ -529,7 +581,6 @@ function SashaAI() {
         <header className="header">
           <div className="brand">
             <div className="orb"></div>
-
             <div>
               <h1>SASHA AI</h1>
               <small>YOUR AI COMPANION</small>
@@ -541,19 +592,14 @@ function SashaAI() {
             onClick={toggleVoice}
           >
             {voiceEnabled
-              ? speaking
-                ? "🔊 Speaking..."
-                : "🔊 Voice ON"
+              ? speaking ? "🔊 Speaking..." : "🔊 Voice ON"
               : "🔇 Voice OFF"}
           </button>
         </header>
 
         <section className="welcome">
           <h2>Hey, I'm Sasha 💙</h2>
-
-          <p>
-            Your intelligent Jamaican AI assistant.
-          </p>
+          <p>Your intelligent Jamaican AI assistant.</p>
 
           <div className="status">
             ● ONLINE • READY TO CHAT
@@ -573,51 +619,38 @@ function SashaAI() {
               key={index}
             >
               <div className="bubble">
-                {item.text}
+                {item.text || (loading && index === messages.length - 1
+                  ? "Sasha is thinking..."
+                  : "")}
               </div>
             </div>
           ))}
-
-          {loading && (
-            <div className="typing">
-              Sasha is thinking...
-            </div>
-          )}
 
           <div ref={messagesEndRef}></div>
         </main>
 
         <div className="suggestions">
           <button
-            onClick={() =>
-              setMessage("Teach me something about AI.")
-            }
+            onClick={() => setMessage("Teach me something about AI.")}
           >
             Teach me about AI
           </button>
 
           <button
-            onClick={() =>
-              setMessage("What can you help me with?")
-            }
+            onClick={() => setMessage("What can you help me with?")}
           >
             What can you do?
           </button>
 
           <button
-            onClick={() =>
-              setMessage("Tell me something interesting.")
-            }
+            onClick={() => setMessage("Tell me something interesting.")}
           >
             Surprise me
           </button>
         </div>
 
         <footer className="composer">
-          <form
-            className="form"
-            onSubmit={sendMessage}
-          >
+          <form className="form" onSubmit={sendMessage}>
             <button
               className={`mic ${listening ? "active" : ""}`}
               type="button"
@@ -631,9 +664,7 @@ function SashaAI() {
               value={message}
               onChange={e => setMessage(e.target.value)}
               placeholder={
-                listening
-                  ? "Listening..."
-                  : "Message Sasha..."
+                listening ? "Listening..." : "Message Sasha..."
               }
               aria-label="Message Sasha"
             />
