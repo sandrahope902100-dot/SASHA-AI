@@ -21,6 +21,13 @@ function SashaAI() {
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
   const voiceRequestRef = useRef(0);
+  const speechQueueRef = useRef([]);
+  const speechWorkerRef = useRef(false);
+  const voiceEnabledRef = useRef(true);
+
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+  }, [voiceEnabled]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -41,6 +48,8 @@ function SashaAI() {
 
   function stopSpeaking() {
     voiceRequestRef.current++;
+    speechQueueRef.current = [];
+    speechWorkerRef.current = false;
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -51,63 +60,90 @@ function SashaAI() {
     setSpeaking(false);
   }
 
-  async function speak(text) {
-    if (!voiceEnabled || !text.trim()) return;
+  function queueSpeech(text) {
+    if (!voiceEnabledRef.current || !text.trim()) return;
 
-    stopSpeaking();
+    speechQueueRef.current.push(text.trim());
 
+    if (!speechWorkerRef.current) {
+      playSpeechQueue();
+    }
+  }
+
+  async function playSpeechQueue() {
+    if (speechWorkerRef.current) return;
+
+    speechWorkerRef.current = true;
     const requestId = voiceRequestRef.current;
-    setVoiceError("");
 
-    try {
-      const audioUrl =
-        "/api/speech?text=" + encodeURIComponent(text);
+    while (
+      speechQueueRef.current.length > 0 &&
+      requestId === voiceRequestRef.current &&
+      voiceEnabledRef.current
+    ) {
+      const text = speechQueueRef.current.shift();
 
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-      audio.preload = "none";
+      try {
+        const audio = new Audio(
+          "/api/speech?text=" + encodeURIComponent(text)
+        );
 
-      audio.onplay = () => {
-        if (requestId === voiceRequestRef.current) {
-          setSpeaking(true);
-          setVoiceError("");
-        }
-      };
+        audioRef.current = audio;
+        audio.preload = "auto";
 
-      audio.onended = () => {
+        audio.onplay = () => {
+          if (requestId === voiceRequestRef.current) {
+            setSpeaking(true);
+            setVoiceError("");
+          }
+        };
+
+        await new Promise((resolve, reject) => {
+          audio.onended = resolve;
+
+          audio.onerror = () => {
+            reject(new Error("Audio playback failed."));
+          };
+
+          audio.play().catch(reject);
+        });
+
         if (requestId === voiceRequestRef.current) {
           audioRef.current = null;
           setSpeaking(false);
         }
-      };
 
-      audio.onerror = () => {
+      } catch (error) {
         if (requestId === voiceRequestRef.current) {
-          audioRef.current = null;
-          setSpeaking(false);
+          console.error("Sasha voice error:", error);
           setVoiceError(
-            "Sasha's audio could not be played. Check the voice service."
+            "Sasha couldn't play her voice. Check the voice service."
           );
+          setSpeaking(false);
         }
-      };
+      }
+    }
 
-      await audio.play();
-
-    } catch (error) {
-      if (requestId !== voiceRequestRef.current) return;
-
-      console.error("Sasha voice error:", error);
-      setVoiceError(
-        error.message || "Sasha couldn't play her voice."
-      );
+    if (requestId === voiceRequestRef.current) {
+      speechWorkerRef.current = false;
       setSpeaking(false);
+
+      if (
+        speechQueueRef.current.length > 0 &&
+        voiceEnabledRef.current
+      ) {
+        playSpeechQueue();
+      }
     }
   }
 
   function toggleVoice() {
     if (voiceEnabled) {
+      voiceEnabledRef.current = false;
       stopSpeaking();
       setVoiceError("");
+    } else {
+      voiceEnabledRef.current = true;
     }
 
     setVoiceEnabled(!voiceEnabled);
@@ -190,13 +226,16 @@ function SashaAI() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+
         throw new Error(
           data.error || "Sasha is temporarily unavailable."
         );
       }
 
       if (!response.body) {
-        throw new Error("Your browser could not receive Sasha's response.");
+        throw new Error(
+          "Your browser could not receive Sasha's response."
+        );
       }
 
       const reader = response.body.getReader();
@@ -205,6 +244,65 @@ function SashaAI() {
       let buffer = "";
       let reply = "";
       let streamError = "";
+      let speechBuffer = "";
+
+      function updateAssistant(text) {
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated.length - 1;
+
+          if (updated[last]?.role === "assistant") {
+            updated[last] = {
+              ...updated[last],
+              text
+            };
+          }
+
+          return updated;
+        });
+      }
+
+      function queueCompletedSpeech() {
+        if (!voiceEnabledRef.current) {
+          speechBuffer = "";
+          return;
+        }
+
+        // Send complete sentences to the voice queue.
+        const sentenceMatch = speechBuffer.match(
+          /^([\s\S]*?[.!?])(?:\s+|$)/
+        );
+
+        if (sentenceMatch) {
+          const sentence = sentenceMatch[1].trim();
+
+          speechBuffer = speechBuffer
+            .slice(sentenceMatch[0].length)
+            .trimStart();
+
+          if (sentence) {
+            queueSpeech(sentence);
+          }
+
+          return;
+        }
+
+        // Prevent long answers from waiting too long
+        // for punctuation before starting speech.
+        if (speechBuffer.length >= 180) {
+          const splitAt = speechBuffer.lastIndexOf(" ", 160);
+
+          if (splitAt > 60) {
+            queueSpeech(
+              speechBuffer.slice(0, splitAt).trim()
+            );
+
+            speechBuffer = speechBuffer
+              .slice(splitAt)
+              .trimStart();
+          }
+        }
+      }
 
       function processBlock(block) {
         let eventName = "message";
@@ -230,20 +328,10 @@ function SashaAI() {
 
         if (eventName === "token" && data.text) {
           reply += data.text;
+          speechBuffer += data.text;
 
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated.length - 1;
-
-            if (updated[last]?.role === "assistant") {
-              updated[last] = {
-                ...updated[last],
-                text: reply
-              };
-            }
-
-            return updated;
-          });
+          updateAssistant(reply);
+          queueCompletedSpeech();
         }
 
         if (eventName === "error") {
@@ -253,20 +341,7 @@ function SashaAI() {
 
         if (eventName === "done" && data.reply) {
           reply = data.reply;
-
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated.length - 1;
-
-            if (updated[last]?.role === "assistant") {
-              updated[last] = {
-                ...updated[last],
-                text: reply
-              };
-            }
-
-            return updated;
-          });
+          updateAssistant(reply);
         }
       }
 
@@ -275,7 +350,9 @@ function SashaAI() {
 
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, {
+          stream: true
+        });
 
         const blocks = buffer.split("\n\n");
         buffer = blocks.pop() || "";
@@ -296,11 +373,15 @@ function SashaAI() {
       }
 
       if (!reply.trim()) {
-        throw new Error("Sasha returned an empty answer. Please try again.");
+        throw new Error(
+          "Sasha returned an empty answer. Please try again."
+        );
       }
 
-      if (voiceEnabled) {
-        speak(reply);
+      // Speak the remaining words after Gemini finishes.
+      if (voiceEnabledRef.current && speechBuffer.trim()) {
+        queueSpeech(speechBuffer.trim());
+        speechBuffer = "";
       }
 
     } catch (error) {
@@ -619,9 +700,11 @@ function SashaAI() {
               key={index}
             >
               <div className="bubble">
-                {item.text || (loading && index === messages.length - 1
-                  ? "Sasha is thinking..."
-                  : "")}
+                {item.text || (
+                  loading && index === messages.length - 1
+                    ? "Sasha is thinking..."
+                    : ""
+                )}
               </div>
             </div>
           ))}
