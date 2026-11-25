@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -84,9 +85,25 @@ function SashaAI() {
       const text = speechQueueRef.current.shift();
 
       try {
-        const audio = new Audio(
-          "/api/speech?text=" + encodeURIComponent(text)
-        );
+        // Server expects POST with JSON, not GET.
+        const response = await fetch("/api/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || "Fish Audio could not generate speech."
+          );
+        }
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
 
         audioRef.current = audio;
         audio.preload = "auto";
@@ -108,6 +125,8 @@ function SashaAI() {
           audio.play().catch(reject);
         });
 
+        URL.revokeObjectURL(audioUrl);
+
         if (requestId === voiceRequestRef.current) {
           audioRef.current = null;
           setSpeaking(false);
@@ -116,9 +135,7 @@ function SashaAI() {
       } catch (error) {
         if (requestId === voiceRequestRef.current) {
           console.error("Sasha voice error:", error);
-          setVoiceError(
-            "Sasha couldn't play her voice. Check the voice service."
-          );
+          setVoiceError(error.message);
           setSpeaking(false);
         }
       }
@@ -176,9 +193,7 @@ function SashaAI() {
     recognition.onstart = () => setListening(true);
 
     recognition.onresult = event => {
-      const transcript =
-        event.results[0][0].transcript;
-
+      const transcript = event.results[0][0].transcript;
       setMessage(transcript);
       setListening(false);
     };
@@ -246,7 +261,7 @@ function SashaAI() {
       let streamError = "";
       let speechBuffer = "";
 
-      function updateAssistant(text) {
+      function updateAssistant(newText) {
         setMessages(prev => {
           const updated = [...prev];
           const last = updated.length - 1;
@@ -254,7 +269,7 @@ function SashaAI() {
           if (updated[last]?.role === "assistant") {
             updated[last] = {
               ...updated[last],
-              text
+              text: newText
             };
           }
 
@@ -268,7 +283,6 @@ function SashaAI() {
           return;
         }
 
-        // Send complete sentences to the voice queue.
         const sentenceMatch = speechBuffer.match(
           /^([\s\S]*?[.!?])(?:\s+|$)/
         );
@@ -280,15 +294,11 @@ function SashaAI() {
             .slice(sentenceMatch[0].length)
             .trimStart();
 
-          if (sentence) {
-            queueSpeech(sentence);
-          }
+          if (sentence) queueSpeech(sentence);
 
           return;
         }
 
-        // Prevent long answers from waiting too long
-        // for punctuation before starting speech.
         if (speechBuffer.length >= 180) {
           const splitAt = speechBuffer.lastIndexOf(" ", 160);
 
@@ -318,15 +328,23 @@ function SashaAI() {
 
         if (!dataLines.length) return;
 
+        const rawData = dataLines.join("\n");
+
+        if (rawData === "[DONE]") return;
+
         let data;
 
         try {
-          data = JSON.parse(dataLines.join("\n"));
-        } catch {
+          data = JSON.parse(rawData);
+        } catch (error) {
+          console.error("Sasha stream parsing error:", rawData);
+          streamError = "Sasha sent an unreadable response.";
           return;
         }
 
-        if (eventName === "token" && data.text) {
+        // Read the format actually sent by server.js:
+        // data: {"text":"Hello"}
+        if (typeof data.text === "string" && data.text.length > 0) {
           reply += data.text;
           speechBuffer += data.text;
 
@@ -334,9 +352,12 @@ function SashaAI() {
           queueCompletedSpeech();
         }
 
-        if (eventName === "error") {
-          streamError =
-            data.error || "Sasha couldn't finish her answer.";
+        if (data.error) {
+          streamError = data.error;
+        }
+
+        if (eventName === "error" && !data.error) {
+          streamError = "Sasha couldn't finish her answer.";
         }
 
         if (eventName === "done" && data.reply) {
@@ -354,15 +375,23 @@ function SashaAI() {
           stream: true
         });
 
+        // Handle both Windows and Unix line endings.
+        buffer = buffer.replace(/\r\n/g, "\n");
+
         const blocks = buffer.split("\n\n");
         buffer = blocks.pop() || "";
 
         for (const block of blocks) {
           processBlock(block);
         }
+
+        if (streamError) {
+          throw new Error(streamError);
+        }
       }
 
       buffer += decoder.decode();
+      buffer = buffer.replace(/\r\n/g, "\n");
 
       if (buffer.trim()) {
         processBlock(buffer);
@@ -374,11 +403,10 @@ function SashaAI() {
 
       if (!reply.trim()) {
         throw new Error(
-          "Sasha returned an empty answer. Please try again."
+          "Gemini connected, but no text was received. Please try again."
         );
       }
 
-      // Speak the remaining words after Gemini finishes.
       if (voiceEnabledRef.current && speechBuffer.trim()) {
         queueSpeech(speechBuffer.trim());
         speechBuffer = "";
@@ -390,12 +418,13 @@ function SashaAI() {
       setMessages(prev => {
         const updated = [...prev];
 
+        const last = updated.length - 1;
+
         if (
-          updated.length &&
-          updated[updated.length - 1].role === "assistant" &&
-          !updated[updated.length - 1].text
+          updated[last]?.role === "assistant" &&
+          !updated[last].text
         ) {
-          updated[updated.length - 1] = {
+          updated[last] = {
             role: "assistant",
             text: error.message ||
               "I couldn't connect just now. Please try again."
@@ -773,3 +802,4 @@ function SashaAI() {
 createRoot(
   document.getElementById("root")
 ).render(<SashaAI />);
+
