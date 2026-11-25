@@ -1,4 +1,6 @@
 
+
+
 const express = require("express");
 const path = require("path");
 
@@ -7,7 +9,7 @@ const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "2mb" }));
 
-// Primary Gemini model and backup model
+// Gemini primary and backup models
 const MODELS = [
   "gemini-3.8-flash",
   "gemini-3.5-flash-lite"
@@ -41,26 +43,25 @@ Never:
 You are Sasha AI. Speak naturally, like a helpful person having a conversation.
 `;
 
-// Convert app messages into Gemini conversation format
+// Prepare conversation history
 function prepareContents(messages) {
-  const validMessages = Array.isArray(messages) ? messages : [];
-
-  return validMessages
+  return messages
     .filter(message =>
       message &&
       typeof message.text === "string" &&
-      message.text.trim() !== ""
+      message.text.trim()
     )
     .slice(-30)
     .map(message => ({
-      role: message.role === "assistant" || message.role === "model"
-        ? "model"
-        : "user",
+      role:
+        message.role === "assistant" || message.role === "model"
+          ? "model"
+          : "user",
       parts: [{ text: message.text }]
     }));
 }
 
-// Request Gemini using a selected model
+// Request a Gemini model
 async function requestGemini(model, contents, signal) {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
@@ -84,7 +85,7 @@ async function requestGemini(model, contents, signal) {
   });
 }
 
-// Get a successful Gemini stream, switching models when needed
+// Try primary model, then backup model
 async function getGeminiStream(contents, signal) {
   let lastError = "";
 
@@ -113,18 +114,10 @@ async function getGeminiStream(contents, signal) {
 
       lastError = detail;
 
-      // Try the backup model when the primary has a quota
-      // problem or a temporary service issue.
       if (
-        response.status === 429 ||
-        response.status === 500 ||
-        response.status === 502 ||
-        response.status === 503 ||
-        response.status === 504
+        [429, 500, 502, 503, 504].includes(response.status)
       ) {
-        console.log(
-          `${model} unavailable. Trying the next model...`
-        );
+        console.log(`Switching from ${model} to backup if available.`);
         continue;
       }
 
@@ -137,10 +130,7 @@ async function getGeminiStream(contents, signal) {
         throw error;
       }
 
-      if (
-        error.message &&
-        error.message.startsWith("Gemini returned HTTP")
-      ) {
+      if (error.message.startsWith("Gemini returned HTTP")) {
         throw error;
       }
 
@@ -150,15 +140,74 @@ async function getGeminiStream(contents, signal) {
   }
 
   throw new Error(
-    `All Gemini models failed. Last error: ${lastError}`
+    `All Gemini models failed. ${lastError}`
   );
+}
+
+// Send text to the app in its expected SSE format
+function sendText(res, text) {
+  if (!res.destroyed && !res.writableEnded) {
+    res.write(
+      `data: ${JSON.stringify({ text })}\n\n`
+    );
+  }
+}
+
+// Process one Gemini SSE event
+function processGeminiEvent(event, res) {
+  const dataLines = event
+    .split("\n")
+    .filter(line => line.startsWith("data:"))
+    .map(line => line.slice(5).trim());
+
+  if (!dataLines.length) return 0;
+
+  const rawData = dataLines.join("\n");
+
+  if (!rawData || rawData === "[DONE]") return 0;
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(rawData);
+  } catch (error) {
+    console.error("Gemini event parsing error:", rawData);
+    throw new Error("Gemini returned an unreadable response.");
+  }
+
+  if (parsed.error) {
+    throw new Error(
+      parsed.error.message || "Gemini stream error."
+    );
+  }
+
+  const parts =
+    parsed.candidates?.[0]?.content?.parts || [];
+
+  let textLength = 0;
+
+  for (const part of parts) {
+    if (typeof part.text === "string" && part.text.length > 0) {
+      sendText(res, part.text);
+      textLength += part.text.length;
+    }
+  }
+
+  if (parsed.candidates?.[0]?.finishReason) {
+    console.log(
+      "Gemini finish reason:",
+      parsed.candidates[0].finishReason
+    );
+  }
+
+  return textLength;
 }
 
 // Chat endpoint
 app.post("/api/chat", async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(500).json({
-      error: "GEMINI_API_KEY is missing in Render environment variables."
+      error: "GEMINI_API_KEY is missing in Render."
     });
   }
 
@@ -172,7 +221,7 @@ app.post("/api/chat", async (req, res) => {
 
   const contents = prepareContents(messages);
 
-  if (contents.length === 0) {
+  if (!contents.length) {
     return res.status(400).json({
       error: "No valid messages were received."
     });
@@ -181,6 +230,7 @@ app.post("/api/chat", async (req, res) => {
   const controller = new AbortController();
 
   const timeout = setTimeout(() => {
+    console.error("Gemini request timed out.");
     controller.abort();
   }, 90000);
 
@@ -196,7 +246,11 @@ app.post("/api/chat", async (req, res) => {
       controller.signal
     );
 
-    res.setHeader("Content-Type", "text/event-stream");
+    if (!geminiResponse.body) {
+      throw new Error("Gemini returned an empty response stream.");
+    }
+
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
@@ -205,62 +259,45 @@ app.post("/api/chat", async (req, res) => {
     const decoder = new TextDecoder();
 
     let buffer = "";
+    let totalTextLength = 0;
 
     while (true) {
       const { value, done } = await reader.read();
 
       if (done) break;
 
+      // Normalize Windows and Unix line endings
       buffer += decoder.decode(value, { stream: true });
+      buffer = buffer.replace(/\r\n/g, "\n");
 
+      // Process complete SSE events
       const events = buffer.split("\n\n");
       buffer = events.pop() || "";
 
       for (const event of events) {
-        const lines = event.split("\n");
-
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-
-          const rawData = line.slice(5).trim();
-
-          if (!rawData || rawData === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(rawData);
-
-            const parts =
-              parsed.candidates?.[0]?.content?.parts || [];
-
-            for (const part of parts) {
-              if (typeof part.text === "string" && part.text) {
-                res.write(
-                  `data: ${JSON.stringify({
-                    text: part.text
-                  })}\n\n`
-                );
-              }
-            }
-
-            if (parsed.error) {
-              throw new Error(parsed.error.message || "Gemini stream error");
-            }
-
-          } catch (parseError) {
-            if (parseError.message === "Gemini stream error") {
-              throw parseError;
-            }
-
-            console.error(
-              "Could not parse Gemini stream event:",
-              parseError.message
-            );
-          }
-        }
+        totalTextLength += processGeminiEvent(event, res);
       }
     }
 
-    if (!res.writableEnded) {
+    // Process any remaining data after the stream ends
+    buffer += decoder.decode();
+    buffer = buffer.replace(/\r\n/g, "\n");
+
+    if (buffer.trim()) {
+      totalTextLength += processGeminiEvent(buffer, res);
+    }
+
+    console.log(
+      `Gemini response completed. Text characters: ${totalTextLength}`
+    );
+
+    if (totalTextLength === 0) {
+      throw new Error(
+        "Gemini connected but returned no text. Please try again."
+      );
+    }
+
+    if (!res.writableEnded && !res.destroyed) {
       res.write("data: [DONE]\n\n");
       res.end();
     }
@@ -272,7 +309,7 @@ app.post("/api/chat", async (req, res) => {
       res.status(500).json({
         error: error.message || "Sasha could not get a response."
       });
-    } else if (!res.writableEnded) {
+    } else if (!res.writableEnded && !res.destroyed) {
       res.write(
         `data: ${JSON.stringify({
           error: error.message || "Sasha could not finish responding."
@@ -373,7 +410,7 @@ app.post("/api/speech", async (req, res) => {
   }
 });
 
-// Serve the React application
+// Serve React application
 app.use(express.static(path.join(__dirname, "dist")));
 
 app.get(/.*/, (req, res) => {
@@ -382,7 +419,7 @@ app.get(/.*/, (req, res) => {
 
 // Start server
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Sasha AI server running on port ${PORT}`);
-  console.log(`Primary Gemini model: ${MODELS[0]}`);
-  console.log(`Backup Gemini model: ${MODELS[1]}`);
+  console.log(`Sasha AI running on port ${PORT}`);
+  console.log(`Primary model: ${MODELS[0]}`);
+  console.log(`Backup model: ${MODELS[1]}`);
 });
