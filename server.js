@@ -78,7 +78,7 @@ app.post("/api/chat", async (req, res) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
 
-  req.on("close", () => {
+  res.on("close", () => {
     if (!res.writableEnded) controller.abort();
   });
 
