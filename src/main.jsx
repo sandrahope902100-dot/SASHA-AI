@@ -59,6 +59,7 @@ function SashaAI() {
     if (!voiceEnabled) return;
 
     stopSpeaking();
+    setVoiceError("");
 
     try {
       const response = await fetch("/api/speech", {
@@ -71,18 +72,27 @@ function SashaAI() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Voice service unavailable.");
+        throw new Error(
+          data.error || `Voice server error: ${response.status}`
+        );
       }
 
       const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
 
+      if (!audioBlob.size) {
+        throw new Error("Sasha received an empty audio file.");
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob);
       audioUrlRef.current = audioUrl;
 
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
 
-      audio.onplay = () => setSpeaking(true);
+      audio.onplay = () => {
+        setSpeaking(true);
+        setVoiceError("");
+      };
 
       audio.onended = () => {
         if (audioUrlRef.current === audioUrl) {
@@ -98,6 +108,9 @@ function SashaAI() {
           URL.revokeObjectURL(audioUrl);
           audioUrlRef.current = null;
           audioRef.current = null;
+          setVoiceError(
+            "The audio arrived, but your browser couldn't play it."
+          );
           setSpeaking(false);
         }
       };
@@ -105,7 +118,10 @@ function SashaAI() {
       await audio.play();
 
     } catch (error) {
-      console.error("Sasha voice error:", error.message);
+      console.error("Sasha voice error:", error);
+      setVoiceError(
+        error.message || "Sasha couldn't play her voice."
+      );
       setSpeaking(false);
     }
   }
@@ -113,6 +129,7 @@ function SashaAI() {
   function toggleVoice() {
     if (voiceEnabled) {
       stopSpeaking();
+      setVoiceError("");
     }
 
     setVoiceEnabled(!voiceEnabled);
@@ -123,7 +140,9 @@ function SashaAI() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Voice input is not supported in this browser. Please use Chrome.");
+      alert(
+        "Voice input is not supported in this browser. Please use Chrome."
+      );
       return;
     }
 
@@ -160,6 +179,7 @@ function SashaAI() {
     if (!text || loading) return;
 
     stopSpeaking();
+    setVoiceError("");
 
     setMessages(prev => [...prev, { role: "user", text }]);
     setMessage("");
@@ -177,10 +197,13 @@ function SashaAI() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Sasha is temporarily unavailable.");
+        throw new Error(
+          data.error || "Sasha is temporarily unavailable."
+        );
       }
 
-      const reply = data.reply || "I couldn't generate a reply. Try again.";
+      const reply =
+        data.reply || "I couldn't generate a reply. Try again.";
 
       setMessages(prev => [
         ...prev,
@@ -194,7 +217,9 @@ function SashaAI() {
         ...prev,
         {
           role: "assistant",
-          text: error.message || "I couldn't connect just now. Please try again."
+          text:
+            error.message ||
+            "I couldn't connect just now. Please try again."
         }
       ]);
     } finally {
@@ -290,6 +315,14 @@ function SashaAI() {
       font-size: 11px;
       margin-top: 12px;
       letter-spacing: 1px;
+    }
+
+    .voice-error {
+      color: #ff8295;
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
     }
 
     .messages {
@@ -450,6 +483,12 @@ function SashaAI() {
           <h2>Hey, I'm Sasha 💙</h2>
           <p>Your intelligent Jamaican AI assistant.</p>
           <div className="status">● ONLINE • READY TO CHAT</div>
+
+          {voiceError && (
+            <div className="voice-error">
+              Voice issue: {voiceError}
+            </div>
+          )}
         </section>
 
         <main className="messages">
@@ -470,9 +509,11 @@ function SashaAI() {
           <button onClick={() => setMessage("Teach me something about AI.")}>
             Teach me about AI
           </button>
+
           <button onClick={() => setMessage("What can you help me with?")}>
             What can you do?
           </button>
+
           <button onClick={() => setMessage("Tell me something interesting.")}>
             Surprise me
           </button>
@@ -515,4 +556,3 @@ function SashaAI() {
 }
 
 createRoot(document.getElementById("root")).render(<SashaAI />);
-
