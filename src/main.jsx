@@ -1,8 +1,6 @@
 
-
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import "./style.css";
 
 function SashaAI() {
   const [messages, setMessages] = useState([
@@ -42,13 +40,10 @@ function SashaAI() {
     speech.pitch = 1;
 
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v =>
-      v.lang.toLowerCase().includes("en-jm")
-    ) || voices.find(v =>
-      v.lang.toLowerCase().includes("en-gb")
-    ) || voices.find(v =>
-      v.lang.toLowerCase().includes("en-us")
-    );
+    const preferredVoice =
+      voices.find(v => v.lang.toLowerCase().includes("en-jm")) ||
+      voices.find(v => v.lang.toLowerCase().includes("en-gb")) ||
+      voices.find(v => v.lang.toLowerCase().includes("en-us"));
 
     if (preferredVoice) speech.voice = preferredVoice;
 
@@ -90,10 +85,7 @@ function SashaAI() {
       setListening(false);
     };
 
-    recognition.onerror = () => {
-      setListening(false);
-    };
-
+    recognition.onerror = () => setListening(false);
     recognition.onend = () => setListening(false);
 
     recognitionRef.current = recognition;
@@ -323,9 +315,7 @@ function SashaAI() {
       outline: none;
     }
 
-    .form input:focus {
-      border-color: #50baff;
-    }
+    .form input:focus { border-color: #50baff; }
 
     .mic, .send {
       border: none;
@@ -355,9 +345,7 @@ function SashaAI() {
       font-weight: bold;
     }
 
-    .send:disabled {
-      opacity: .4;
-    }
+    .send:disabled { opacity: .4; }
 
     .footer {
       text-align: center;
@@ -403,10 +391,7 @@ function SashaAI() {
 
         <main className="messages">
           {messages.map((item, index) => (
-            <div
-              className={`message ${item.role}`}
-              key={index}
-            >
+            <div className={`message ${item.role}`} key={index}>
               <div className="bubble">{item.text}</div>
             </div>
           ))}
@@ -467,3 +452,4 @@ function SashaAI() {
 }
 
 createRoot(document.getElementById("root")).render(<SashaAI />);
+
