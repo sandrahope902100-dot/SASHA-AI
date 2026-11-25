@@ -15,6 +15,7 @@ function SashaAI() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
 
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
