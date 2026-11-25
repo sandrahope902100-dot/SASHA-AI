@@ -21,9 +21,12 @@ function SashaAI() {
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
   const audioUrlRef = useRef(null);
+  const voiceRequestRef = useRef(0);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
   }, [messages, loading]);
 
   useEffect(() => {
@@ -41,6 +44,8 @@ function SashaAI() {
   }, []);
 
   function stopSpeaking() {
+    voiceRequestRef.current++;
+
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -59,6 +64,9 @@ function SashaAI() {
     if (!voiceEnabled) return;
 
     stopSpeaking();
+
+    const requestId = voiceRequestRef.current;
+
     setVoiceError("");
 
     try {
@@ -72,6 +80,7 @@ function SashaAI() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+
         throw new Error(
           data.error || `Voice server error: ${response.status}`
         );
@@ -79,23 +88,30 @@ function SashaAI() {
 
       const audioBlob = await response.blob();
 
+      if (requestId !== voiceRequestRef.current) return;
+
       if (!audioBlob.size) {
         throw new Error("Sasha received an empty audio file.");
       }
 
       const audioUrl = URL.createObjectURL(audioBlob);
+
       audioUrlRef.current = audioUrl;
 
       const audio = new Audio(audioUrl);
+
       audioRef.current = audio;
+      audio.preload = "auto";
 
       audio.onplay = () => {
-        setSpeaking(true);
-        setVoiceError("");
+        if (requestId === voiceRequestRef.current) {
+          setSpeaking(true);
+          setVoiceError("");
+        }
       };
 
       audio.onended = () => {
-        if (audioUrlRef.current === audioUrl) {
+        if (requestId === voiceRequestRef.current) {
           URL.revokeObjectURL(audioUrl);
           audioUrlRef.current = null;
           audioRef.current = null;
@@ -104,13 +120,11 @@ function SashaAI() {
       };
 
       audio.onerror = () => {
-        if (audioUrlRef.current === audioUrl) {
+        if (requestId === voiceRequestRef.current) {
           URL.revokeObjectURL(audioUrl);
           audioUrlRef.current = null;
           audioRef.current = null;
-          setVoiceError(
-            "The audio arrived, but your browser couldn't play it."
-          );
+          setVoiceError("Sasha's audio could not be played.");
           setSpeaking(false);
         }
       };
@@ -118,10 +132,14 @@ function SashaAI() {
       await audio.play();
 
     } catch (error) {
+      if (requestId !== voiceRequestRef.current) return;
+
       console.error("Sasha voice error:", error);
+
       setVoiceError(
         error.message || "Sasha couldn't play her voice."
       );
+
       setSpeaking(false);
     }
   }
@@ -137,7 +155,8 @@ function SashaAI() {
 
   function startListening() {
     const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       alert(
@@ -153,6 +172,7 @@ function SashaAI() {
     }
 
     const recognition = new SpeechRecognition();
+
     recognition.lang = "en-JM";
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -176,12 +196,17 @@ function SashaAI() {
     e?.preventDefault();
 
     const text = message.trim();
+
     if (!text || loading) return;
 
     stopSpeaking();
     setVoiceError("");
 
-    setMessages(prev => [...prev, { role: "user", text }]);
+    setMessages(prev => [
+      ...prev,
+      { role: "user", text }
+    ]);
+
     setMessage("");
     setLoading(true);
 
@@ -210,7 +235,9 @@ function SashaAI() {
         { role: "assistant", text: reply }
       ]);
 
-      speak(reply);
+      if (voiceEnabled) {
+        speak(reply);
+      }
 
     } catch (error) {
       setMessages(prev => [
@@ -228,7 +255,9 @@ function SashaAI() {
   }
 
   const styles = `
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -243,7 +272,11 @@ function SashaAI() {
       flex-direction: column;
       max-width: 850px;
       margin: auto;
-      background: radial-gradient(circle at top, #142844, #080e19 58%);
+      background: radial-gradient(
+        circle at top,
+        #142844,
+        #080e19 58%
+      );
     }
 
     .header {
@@ -268,7 +301,13 @@ function SashaAI() {
       width: 47px;
       height: 47px;
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #fff, #54caff 35%, #1760a9 70%, #101d35);
+      background: radial-gradient(
+        circle at 35% 30%,
+        #fff,
+        #54caff 35%,
+        #1760a9 70%,
+        #101d35
+      );
       box-shadow: 0 0 20px #299bff88;
     }
 
@@ -336,7 +375,9 @@ function SashaAI() {
       margin: 13px 0;
     }
 
-    .message.user { justify-content: flex-end; }
+    .message.user {
+      justify-content: flex-end;
+    }
 
     .bubble {
       max-width: 85%;
@@ -355,7 +396,11 @@ function SashaAI() {
     }
 
     .user .bubble {
-      background: linear-gradient(135deg, #1769a9, #17477c);
+      background: linear-gradient(
+        135deg,
+        #1769a9,
+        #17477c
+      );
       border: 1px solid #398bd0;
       border-bottom-right-radius: 4px;
     }
@@ -409,7 +454,9 @@ function SashaAI() {
       outline: none;
     }
 
-    .form input:focus { border-color: #50baff; }
+    .form input:focus {
+      border-color: #50baff;
+    }
 
     .mic, .send {
       border: none;
@@ -434,12 +481,18 @@ function SashaAI() {
 
     .send {
       color: white;
-      background: linear-gradient(135deg, #168de0, #2454a0);
+      background: linear-gradient(
+        135deg,
+        #168de0,
+        #2454a0
+      );
       font-size: 14px;
       font-weight: bold;
     }
 
-    .send:disabled { opacity: .4; }
+    .send:disabled {
+      opacity: .4;
+    }
 
     .footer {
       text-align: center;
@@ -449,12 +502,22 @@ function SashaAI() {
       letter-spacing: 1px;
     }
 
-    button:disabled { cursor: not-allowed; }
+    button:disabled {
+      cursor: not-allowed;
+    }
 
     @media (max-width: 480px) {
-      .brand h1 { font-size: 17px; }
-      .welcome h2 { font-size: 21px; }
-      .bubble { max-width: 90%; }
+      .brand h1 {
+        font-size: 17px;
+      }
+
+      .welcome h2 {
+        font-size: 21px;
+      }
+
+      .bubble {
+        max-width: 90%;
+      }
     }
   `;
 
@@ -466,23 +529,35 @@ function SashaAI() {
         <header className="header">
           <div className="brand">
             <div className="orb"></div>
+
             <div>
               <h1>SASHA AI</h1>
               <small>YOUR AI COMPANION</small>
             </div>
           </div>
 
-          <button className="voice-toggle" onClick={toggleVoice}>
+          <button
+            className="voice-toggle"
+            onClick={toggleVoice}
+          >
             {voiceEnabled
-              ? speaking ? "🔊 Speaking..." : "🔊 Voice ON"
+              ? speaking
+                ? "🔊 Speaking..."
+                : "🔊 Voice ON"
               : "🔇 Voice OFF"}
           </button>
         </header>
 
         <section className="welcome">
           <h2>Hey, I'm Sasha 💙</h2>
-          <p>Your intelligent Jamaican AI assistant.</p>
-          <div className="status">● ONLINE • READY TO CHAT</div>
+
+          <p>
+            Your intelligent Jamaican AI assistant.
+          </p>
+
+          <div className="status">
+            ● ONLINE • READY TO CHAT
+          </div>
 
           {voiceError && (
             <div className="voice-error">
@@ -493,34 +568,56 @@ function SashaAI() {
 
         <main className="messages">
           {messages.map((item, index) => (
-            <div className={`message ${item.role}`} key={index}>
-              <div className="bubble">{item.text}</div>
+            <div
+              className={`message ${item.role}`}
+              key={index}
+            >
+              <div className="bubble">
+                {item.text}
+              </div>
             </div>
           ))}
 
           {loading && (
-            <div className="typing">Sasha is thinking...</div>
+            <div className="typing">
+              Sasha is thinking...
+            </div>
           )}
 
           <div ref={messagesEndRef}></div>
         </main>
 
         <div className="suggestions">
-          <button onClick={() => setMessage("Teach me something about AI.")}>
+          <button
+            onClick={() =>
+              setMessage("Teach me something about AI.")
+            }
+          >
             Teach me about AI
           </button>
 
-          <button onClick={() => setMessage("What can you help me with?")}>
+          <button
+            onClick={() =>
+              setMessage("What can you help me with?")
+            }
+          >
             What can you do?
           </button>
 
-          <button onClick={() => setMessage("Tell me something interesting.")}>
+          <button
+            onClick={() =>
+              setMessage("Tell me something interesting.")
+            }
+          >
             Surprise me
           </button>
         </div>
 
         <footer className="composer">
-          <form className="form" onSubmit={sendMessage}>
+          <form
+            className="form"
+            onSubmit={sendMessage}
+          >
             <button
               className={`mic ${listening ? "active" : ""}`}
               type="button"
@@ -533,7 +630,11 @@ function SashaAI() {
             <input
               value={message}
               onChange={e => setMessage(e.target.value)}
-              placeholder={listening ? "Listening..." : "Message Sasha..."}
+              placeholder={
+                listening
+                  ? "Listening..."
+                  : "Message Sasha..."
+              }
               aria-label="Message Sasha"
             />
 
@@ -555,4 +656,6 @@ function SashaAI() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<SashaAI />);
+createRoot(
+  document.getElementById("root")
+).render(<SashaAI />);
