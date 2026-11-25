@@ -238,7 +238,7 @@ app.get("/api/speech", async (req, res) => {
 
   const controller = new AbortController();
 
-  req.on("close", () => controller.abort());
+  res.on("close", () => controller.abort());
 
   try {
     const response = await fetch("https://api.fish.audio/v1/tts", {
