@@ -7,29 +7,25 @@ app.use(express.json());
 
 app.use(express.static(path.join(__dirname, "dist")));
 
-app.post("/api/chat", async (req, res) => {
-  try {
-    const message = req.body?.message;
+async function askGemini(message) {
+  const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!message) {
-      return res.status(400).json({
-        error: "Please enter a message."
-      });
-    }
+  if (!apiKey) {
+    throw new Error("Sasha's API key is not configured.");
+  }
 
-    if (!process.env.GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is missing!");
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
+    apiKey;
 
-      return res.status(500).json({
-        error: "Sasha's API key is not configured."
-      });
-    }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
-      process.env.GEMINI_API_KEY,
-      {
+    try {
+      const response = await fetch(url, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json"
         },
@@ -43,30 +39,79 @@ app.post("/api/chat", async (req, res) => {
             parts: [{ text: message }]
           }]
         })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        return (
+          data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          "I couldn't generate a reply. Please try again."
+        );
       }
+
+      const status = response.status;
+      const errorMessage =
+        data.error?.message || "Google AI is temporarily unavailable.";
+
+      console.error("Gemini API error:", status, errorMessage);
+
+      if (![429, 500, 502, 503, 504].includes(status)) {
+        throw new Error(errorMessage);
+      }
+
+      if (attempt === 3) {
+        throw new Error(
+          "Google AI is busy right now. Please try again shortly."
+        );
+      }
+    } catch (error) {
+      if (attempt === 3) {
+        if (error.name === "AbortError") {
+          throw new Error("Sasha timed out waiting for Google. Please try again.");
+        }
+        throw error;
+      }
+
+      if (
+        error.message &&
+        !error.message.includes("fetch failed") &&
+        error.name !== "AbortError" &&
+        !error.message.includes("Google AI is busy")
+      ) {
+        throw error;
+      }
+
+      console.log("Retrying Gemini request:", attempt);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await new Promise(resolve =>
+      setTimeout(resolve, attempt * 1500)
     );
+  }
+}
 
-    const data = await response.json();
+app.post("/api/chat", async (req, res) => {
+  try {
+    const message = req.body?.message;
 
-    if (!response.ok) {
-      console.error("Gemini API error:", data.error?.message);
-
-      return res.status(response.status).json({
-        error: data.error?.message || "Gemini connection failed."
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        error: "Please enter a message."
       });
     }
 
-    res.json({
-      reply:
-        data.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "Try again, please."
-    });
+    const reply = await askGemini(message);
+
+    res.json({ reply });
 
   } catch (error) {
-    console.error("Sasha server error:", error);
+    console.error("Sasha server error:", error.message);
 
-    res.status(500).json({
-      error: error.message || "Unable to connect to Sasha AI."
+    res.status(503).json({
+      error: error.message || "Sasha is temporarily unavailable."
     });
   }
 });
@@ -80,3 +125,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Sasha AI is running!");
 });
+
