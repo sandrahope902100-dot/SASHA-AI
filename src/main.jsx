@@ -14,9 +14,12 @@ function SashaAI() {
   const [loading, setLoading] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const audioRef = useRef(null);
+  const audioUrlRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -25,35 +28,92 @@ function SashaAI() {
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
-      window.speechSynthesis?.cancel();
+
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
     };
   }, []);
 
-  function speak(text) {
-    if (!voiceEnabled || !("speechSynthesis" in window)) return;
+  function stopSpeaking() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
 
-    window.speechSynthesis.cancel();
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
 
-    const speech = new SpeechSynthesisUtterance(text);
-    speech.lang = "en-JM";
-    speech.rate = 0.92;
-    speech.pitch = 1;
+    setSpeaking(false);
+  }
 
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice =
-      voices.find(v => v.lang.toLowerCase().includes("en-jm")) ||
-      voices.find(v => v.lang.toLowerCase().includes("en-gb")) ||
-      voices.find(v => v.lang.toLowerCase().includes("en-us"));
+  async function speak(text) {
+    if (!voiceEnabled) return;
 
-    if (preferredVoice) speech.voice = preferredVoice;
+    stopSpeaking();
 
-    window.speechSynthesis.speak(speech);
+    try {
+      const response = await fetch("/api/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ text })
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Voice service unavailable.");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      audioUrlRef.current = audioUrl;
+
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      audio.onplay = () => setSpeaking(true);
+
+      audio.onended = () => {
+        if (audioUrlRef.current === audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          audioUrlRef.current = null;
+          audioRef.current = null;
+          setSpeaking(false);
+        }
+      };
+
+      audio.onerror = () => {
+        if (audioUrlRef.current === audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          audioUrlRef.current = null;
+          audioRef.current = null;
+          setSpeaking(false);
+        }
+      };
+
+      await audio.play();
+
+    } catch (error) {
+      console.error("Sasha voice error:", error.message);
+      setSpeaking(false);
+    }
   }
 
   function toggleVoice() {
     if (voiceEnabled) {
-      window.speechSynthesis?.cancel();
+      stopSpeaking();
     }
+
     setVoiceEnabled(!voiceEnabled);
   }
 
@@ -98,7 +158,7 @@ function SashaAI() {
     const text = message.trim();
     if (!text || loading) return;
 
-    window.speechSynthesis?.cancel();
+    stopSpeaking();
 
     setMessages(prev => [...prev, { role: "user", text }]);
     setMessage("");
@@ -379,7 +439,9 @@ function SashaAI() {
           </div>
 
           <button className="voice-toggle" onClick={toggleVoice}>
-            {voiceEnabled ? "🔊 Voice ON" : "🔇 Voice OFF"}
+            {voiceEnabled
+              ? speaking ? "🔊 Speaking..." : "🔊 Voice ON"
+              : "🔇 Voice OFF"}
           </button>
         </header>
 
