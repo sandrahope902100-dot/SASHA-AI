@@ -1,5 +1,4 @@
 
-
 const express = require("express");
 const path = require("path");
 
@@ -58,43 +57,33 @@ async function askGemini(message) {
             .trim();
 
         if (reply) return reply;
-
         throw new Error("Google returned an empty response.");
       }
 
-      const status = response.status;
       const detail =
         data.error?.message || "Google AI is unavailable.";
 
-      console.error("Gemini API error:", status, detail);
+      console.error("Gemini API error:", response.status, detail);
 
-      if (![429, 500, 502, 503, 504].includes(status)) {
+      if (![429, 500, 502, 503, 504].includes(response.status)) {
         throw new Error(detail);
       }
 
       if (attempt === 2) {
-        throw new Error(
-          "Google AI is busy. Please try Sasha again shortly."
-        );
+        throw new Error("Google AI is busy. Please try Sasha again shortly.");
       }
 
     } catch (error) {
       if (attempt === 2) {
         if (error.name === "AbortError") {
-          throw new Error(
-            "Google took too long to respond. Please try again."
-          );
+          throw new Error("Google took too long to respond. Please try again.");
         }
-
         if (
           error.cause?.code === "UND_ERR_HEADERS_TIMEOUT" ||
           error.message === "fetch failed"
         ) {
-          throw new Error(
-            "Sasha could not reach Google. Please try again shortly."
-          );
+          throw new Error("Sasha could not reach Google. Please try again shortly.");
         }
-
         throw error;
       }
 
@@ -127,14 +116,70 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const reply = await askGemini(message.trim());
-
     res.json({ reply });
 
   } catch (error) {
     console.error("Sasha server error:", error.message);
-
     res.status(503).json({
       error: error.message || "Sasha is temporarily unavailable."
+    });
+  }
+});
+
+// Fish Audio voice endpoint
+app.post("/api/speech", async (req, res) => {
+  try {
+    const apiKey = process.env.FISH_AUDIO_API_KEY;
+    const voiceId = process.env.FISH_AUDIO_VOICE_ID;
+    const text = req.body?.text;
+
+    if (!apiKey || !voiceId) {
+      return res.status(500).json({
+        error: "Sasha's voice settings are not configured."
+      });
+    }
+
+    if (typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({
+        error: "No speech text was provided."
+      });
+    }
+
+    const response = await fetch("https://api.fish.audio/v1/tts", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "model": "s2.1-pro-free"
+      },
+      body: JSON.stringify({
+        text: text.trim(),
+        reference_id: voiceId,
+        format: "mp3"
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      console.error("Fish Audio error:", response.status, detail);
+
+      return res.status(502).json({
+        error: "Sasha's voice service could not generate speech."
+      });
+    }
+
+    const audio = Buffer.from(await response.arrayBuffer());
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(audio);
+
+  } catch (error) {
+    console.error("Fish Audio speech error:", error.message);
+
+    res.status(503).json({
+      error: "Sasha could not speak just now. Please try again."
     });
   }
 });
@@ -148,3 +193,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Sasha AI is running on port ${PORT}`);
 });
+
