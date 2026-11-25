@@ -1,56 +1,147 @@
 
-import React, { useState, useEffect, useRef } from "react";
+
+import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import "./style.css";
 
 function SashaAI() {
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      text: "Hey! I'm Sasha AI. Wah gwaan? I'm ready to chat, answer questions and help you get things done. You can type or use the microphone to talk to me."
+    }
+  ]);
+
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [listening, setListening] = useState(false);
+
+  const recognitionRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function sendMessage(e, suggestedText) {
-    if (e) e.preventDefault();
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
 
-    const userMessage = (suggestedText || message).trim();
+  function speak(text) {
+    if (!voiceEnabled || !("speechSynthesis" in window)) return;
 
-    if (!userMessage || loading) return;
+    window.speechSynthesis.cancel();
 
-    setMessages(prev => [
-      ...prev,
-      { sender: "You", text: userMessage }
-    ]);
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.lang = "en-JM";
+    speech.rate = 0.92;
+    speech.pitch = 1;
 
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v =>
+      v.lang.toLowerCase().includes("en-jm")
+    ) || voices.find(v =>
+      v.lang.toLowerCase().includes("en-gb")
+    ) || voices.find(v =>
+      v.lang.toLowerCase().includes("en-us")
+    );
+
+    if (preferredVoice) speech.voice = preferredVoice;
+
+    window.speechSynthesis.speak(speech);
+  }
+
+  function toggleVoice() {
+    if (voiceEnabled) {
+      window.speechSynthesis?.cancel();
+    }
+    setVoiceEnabled(!voiceEnabled);
+  }
+
+  function startListening() {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Voice input is not supported in this browser. Please use Chrome.");
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-JM";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = event => {
+      const transcript = event.results[0][0].transcript;
+      setMessage(transcript);
+      setListening(false);
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+    };
+
+    recognition.onend = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  async function sendMessage(e) {
+    e?.preventDefault();
+
+    const text = message.trim();
+    if (!text || loading) return;
+
+    window.speechSynthesis?.cancel();
+
+    setMessages(prev => [...prev, { role: "user", text }]);
     setMessage("");
     setLoading(true);
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage })
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message: text })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Connection failed.");
+        throw new Error(data.error || "Sasha is temporarily unavailable.");
       }
+
+      const reply = data.reply || "I couldn't generate a reply. Try again.";
 
       setMessages(prev => [
         ...prev,
-        { sender: "Sasha", text: data.reply }
+        { role: "assistant", text: reply }
       ]);
+
+      speak(reply);
+
     } catch (error) {
       setMessages(prev => [
         ...prev,
         {
-          sender: "Sasha",
-          text: "I couldn't connect just now. Please try again. " +
-            error.message
+          role: "assistant",
+          text: error.message || "I couldn't connect just now. Please try again."
         }
       ]);
     } finally {
@@ -58,386 +149,321 @@ function SashaAI() {
     }
   }
 
-  const suggestions = [
-    "Explain artificial intelligence",
-    "Teach me something new",
-    "Help me with technology",
-    "What can you do?"
-  ];
+  const styles = `
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #080e19;
+      color: #eef5ff;
+      font-family: Arial, sans-serif;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      max-width: 850px;
+      margin: auto;
+      background: radial-gradient(circle at top, #142844, #080e19 58%);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 19px 17px;
+      border-bottom: 1px solid #263b57;
+      background: rgba(9, 17, 31, .94);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .orb {
+      width: 47px;
+      height: 47px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #fff, #54caff 35%, #1760a9 70%, #101d35);
+      box-shadow: 0 0 20px #299bff88;
+    }
+
+    .brand h1 {
+      font-size: 20px;
+      margin: 0;
+      letter-spacing: 2px;
+    }
+
+    .brand small {
+      color: #8fb6df;
+      font-size: 11px;
+      letter-spacing: 2px;
+    }
+
+    .voice-toggle {
+      border: 1px solid #438dca;
+      background: #132b45;
+      color: #bfe6ff;
+      padding: 10px 12px;
+      border-radius: 22px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .welcome {
+      text-align: center;
+      padding: 25px 18px 12px;
+    }
+
+    .welcome h2 {
+      font-size: 24px;
+      margin: 5px 0 8px;
+    }
+
+    .welcome p {
+      color: #9bb2cc;
+      font-size: 13px;
+      margin: 0;
+    }
+
+    .status {
+      color: #62e6b2;
+      font-size: 11px;
+      margin-top: 12px;
+      letter-spacing: 1px;
+    }
+
+    .messages {
+      flex: 1;
+      padding: 18px 15px 25px;
+      overflow-y: auto;
+    }
+
+    .message {
+      display: flex;
+      margin: 13px 0;
+    }
+
+    .message.user { justify-content: flex-end; }
+
+    .bubble {
+      max-width: 85%;
+      padding: 13px 15px;
+      border-radius: 17px;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .assistant .bubble {
+      background: #15263c;
+      border: 1px solid #315275;
+      border-bottom-left-radius: 4px;
+    }
+
+    .user .bubble {
+      background: linear-gradient(135deg, #1769a9, #17477c);
+      border: 1px solid #398bd0;
+      border-bottom-right-radius: 4px;
+    }
+
+    .typing {
+      color: #8ecbff;
+      font-size: 13px;
+      padding: 10px;
+    }
+
+    .suggestions {
+      display: flex;
+      gap: 8px;
+      padding: 0 14px 13px;
+      overflow-x: auto;
+    }
+
+    .suggestions button {
+      flex-shrink: 0;
+      background: #10243a;
+      color: #b9dcfa;
+      border: 1px solid #294d70;
+      border-radius: 20px;
+      padding: 9px 12px;
+      font-size: 12px;
+    }
+
+    .composer {
+      padding: 13px 13px 10px;
+      background: #0b1422;
+      border-top: 1px solid #263b57;
+      position: sticky;
+      bottom: 0;
+    }
+
+    .form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .form input {
+      flex: 1;
+      min-width: 0;
+      background: #15243a;
+      color: white;
+      border: 1px solid #355675;
+      border-radius: 25px;
+      padding: 14px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .form input:focus {
+      border-color: #50baff;
+    }
+
+    .mic, .send {
+      border: none;
+      border-radius: 50%;
+      width: 45px;
+      height: 45px;
+      flex-shrink: 0;
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    .mic {
+      color: white;
+      background: #263f5d;
+      border: 1px solid #5596cf;
+    }
+
+    .mic.active {
+      background: #a52d48;
+      box-shadow: 0 0 15px #ff4266;
+    }
+
+    .send {
+      color: white;
+      background: linear-gradient(135deg, #168de0, #2454a0);
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .send:disabled {
+      opacity: .4;
+    }
+
+    .footer {
+      text-align: center;
+      color: #617d9d;
+      font-size: 10px;
+      padding-top: 11px;
+      letter-spacing: 1px;
+    }
+
+    button:disabled { cursor: not-allowed; }
+
+    @media (max-width: 480px) {
+      .brand h1 { font-size: 17px; }
+      .welcome h2 { font-size: 21px; }
+      .bubble { max-width: 90%; }
+    }
+  `;
 
   return (
-    <div className="app">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
+    <>
+      <style>{styles}</style>
 
-        body {
-          margin: 0;
-          background: #050914;
-          font-family: Arial, sans-serif;
-        }
-
-        .app {
-          min-height: 100vh;
-          background: radial-gradient(
-            circle at 50% 0%,
-            #142c4b,
-            #080f20 45%,
-            #050914 85%
-          );
-          color: #edf7ff;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 16px;
-          border-bottom: 1px solid #263d59;
-          background: rgba(5, 12, 26, .9);
-          position: sticky;
-          top: 0;
-          z-index: 5;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-        }
-
-        .logo {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          font-size: 23px;
-          background: linear-gradient(
-            135deg, #e6f7ff, #168bd8, #142b53
-          );
-          box-shadow: 0 0 20px #168bd866;
-        }
-
-        .brand h2 {
-          margin: 0;
-          font-size: 19px;
-          letter-spacing: 2px;
-          color: #d9f4ff;
-        }
-
-        .brand small {
-          display: block;
-          color: #7fa9c8;
-          margin-top: 4px;
-          font-size: 11px;
-        }
-
-        .status {
-          font-size: 11px;
-          color: #65e6b2;
-        }
-
-        .status span {
-          display: inline-block;
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #42e7a1;
-          margin-right: 5px;
-          box-shadow: 0 0 8px #42e7a1;
-        }
-
-        .main {
-          width: 100%;
-          max-width: 850px;
-          margin: auto;
-          padding: 20px 16px;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .welcome {
-          text-align: center;
-          padding: 22px 10px;
-        }
-
-        .orb {
-          width: 108px;
-          height: 108px;
-          margin: 0 auto 18px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          font-size: 48px;
-          background: radial-gradient(
-            circle at 35% 30%,
-            #ffffff,
-            #8ddcff 22%,
-            #167ac5 55%,
-            #101c3d 85%
-          );
-          box-shadow:
-            0 0 25px #35aaff88,
-            0 0 65px #147bd955;
-          animation: glow 3s ease-in-out infinite alternate;
-        }
-
-        @keyframes glow {
-          from {
-            box-shadow: 0 0 20px #35aaff66;
-          }
-          to {
-            box-shadow: 0 0 45px #35aaffbb,
-              0 0 75px #147bd966;
-          }
-        }
-
-        .welcome h1 {
-          font-size: 27px;
-          margin: 8px 0;
-          color: white;
-        }
-
-        .welcome h1 span {
-          color: #58c8ff;
-        }
-
-        .welcome p {
-          color: #a5bdd4;
-          line-height: 1.6;
-          font-size: 14px;
-        }
-
-        .suggestions {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-          margin: 10px 0 25px;
-        }
-
-        .suggestions button {
-          background: #101e32;
-          border: 1px solid #284867;
-          color: #c8eaff;
-          border-radius: 12px;
-          padding: 14px 10px;
-          font-size: 12px;
-          cursor: pointer;
-        }
-
-        .suggestions button:active {
-          background: #163d60;
-        }
-
-        .chat {
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-          padding: 8px 0 20px;
-        }
-
-        .bubble {
-          max-width: 90%;
-          padding: 14px 16px;
-          border-radius: 17px;
-          line-height: 1.6;
-          font-size: 14px;
-          white-space: pre-wrap;
-          overflow-wrap: anywhere;
-        }
-
-        .user {
-          align-self: flex-end;
-          background: linear-gradient(
-            135deg, #1267a7, #17447d
-          );
-          border: 1px solid #318bd0;
-          border-bottom-right-radius: 4px;
-        }
-
-        .sasha {
-          align-self: flex-start;
-          background: #111e31;
-          border: 1px solid #294867;
-          border-bottom-left-radius: 4px;
-        }
-
-        .sender {
-          color: #65caff;
-          font-size: 11px;
-          font-weight: bold;
-          margin-bottom: 6px;
-          letter-spacing: 1px;
-        }
-
-        .typing {
-          color: #83cfff;
-          font-size: 13px;
-          padding: 12px;
-        }
-
-        .composer {
-          position: sticky;
-          bottom: 0;
-          padding: 13px 0 8px;
-          background: #070e1b;
-        }
-
-        .form {
-          display: flex;
-          gap: 9px;
-          padding: 8px;
-          border-radius: 16px;
-          background: #111e30;
-          border: 1px solid #315477;
-          box-shadow: 0 0 22px #147bd922;
-        }
-
-        .form input {
-          flex: 1;
-          min-width: 0;
-          background: transparent;
-          border: none;
-          outline: none;
-          color: white;
-          padding: 10px;
-          font-size: 14px;
-        }
-
-        .form input::placeholder {
-          color: #7894ad;
-        }
-
-        .send {
-          border: none;
-          border-radius: 12px;
-          padding: 0 18px;
-          background: linear-gradient(
-            135deg, #168bd8, #07518e
-          );
-          color: white;
-          font-weight: bold;
-          cursor: pointer;
-        }
-
-        .send:disabled {
-          opacity: .5;
-        }
-
-        .footer {
-          text-align: center;
-          color: #66829e;
-          font-size: 10px;
-          padding: 12px;
-        }
-
-        @media (max-width: 380px) {
-          .status {
-            font-size: 9px;
-          }
-
-          .welcome h1 {
-            font-size: 23px;
-          }
-
-          .suggestions button {
-            font-size: 11px;
-          }
-        }
-      `}</style>
-
-      <header className="header">
-        <div className="brand">
-          <div className="logo">✦</div>
-          <div>
-            <h2>SASHA AI</h2>
-            <small>YOUR JAMAICAN AI ASSISTANT</small>
+      <div className="app">
+        <header className="header">
+          <div className="brand">
+            <div className="orb"></div>
+            <div>
+              <h1>SASHA AI</h1>
+              <small>YOUR AI COMPANION</small>
+            </div>
           </div>
-        </div>
 
-        <div className="status">
-          <span></span> Online
-        </div>
-      </header>
+          <button className="voice-toggle" onClick={toggleVoice}>
+            {voiceEnabled ? "🔊 Voice ON" : "🔇 Voice OFF"}
+          </button>
+        </header>
 
-      <main className="main">
         <section className="welcome">
-          <div className="orb">✦</div>
-          <h1>Hello, I'm <span>Sasha.</span></h1>
-          <p>
-            Your intelligent AI companion.
-            <br />
-            Ask me anything. Let's figure it out together.
-          </p>
+          <h2>Hey, I'm Sasha 💙</h2>
+          <p>Your intelligent Jamaican AI assistant.</p>
+          <div className="status">● ONLINE • READY TO CHAT</div>
         </section>
 
-        {messages.length === 0 && (
-          <section className="suggestions">
-            {suggestions.map((item, index) => (
-              <button
-                key={index}
-                onClick={() => sendMessage(null, item)}
-              >
-                {item}
-              </button>
-            ))}
-          </section>
-        )}
-
-        <section className="chat">
+        <main className="messages">
           {messages.map((item, index) => (
             <div
+              className={`message ${item.role}`}
               key={index}
-              className={
-                "bubble " +
-                (item.sender === "You" ? "user" : "sasha")
-              }
             >
-              <div className="sender">{item.sender}</div>
-              {item.text}
+              <div className="bubble">{item.text}</div>
             </div>
           ))}
 
           {loading && (
-            <div className="typing">
-              ✦ Sasha is thinking...
-            </div>
+            <div className="typing">Sasha is thinking...</div>
           )}
 
-          <div ref={bottomRef}></div>
-        </section>
-      </main>
+          <div ref={messagesEndRef}></div>
+        </main>
 
-      <div className="composer">
-        <form className="form" onSubmit={sendMessage}>
-          <input
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            placeholder="Message Sasha..."
-            aria-label="Message Sasha"
-          />
-
-          <button
-            className="send"
-            type="submit"
-            disabled={loading || !message.trim()}
-          >
-            Send
+        <div className="suggestions">
+          <button onClick={() => setMessage("Teach me something about AI.")}>
+            Teach me about AI
           </button>
-        </form>
-
-        <div className="footer">
-          SASHA AI • Powered by artificial intelligence
+          <button onClick={() => setMessage("What can you help me with?")}>
+            What can you do?
+          </button>
+          <button onClick={() => setMessage("Tell me something interesting.")}>
+            Surprise me
+          </button>
         </div>
+
+        <footer className="composer">
+          <form className="form" onSubmit={sendMessage}>
+            <button
+              className={`mic ${listening ? "active" : ""}`}
+              type="button"
+              onClick={startListening}
+              title="Speak to Sasha"
+            >
+              {listening ? "🔴" : "🎤"}
+            </button>
+
+            <input
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              placeholder={listening ? "Listening..." : "Message Sasha..."}
+              aria-label="Message Sasha"
+            />
+
+            <button
+              className="send"
+              type="submit"
+              disabled={loading || !message.trim()}
+            >
+              Send
+            </button>
+          </form>
+
+          <div className="footer">
+            SASHA AI • POWERED BY ARTIFICIAL INTELLIGENCE
+          </div>
+        </footer>
       </div>
-    </div>
+    </>
   );
 }
 
 createRoot(document.getElementById("root")).render(<SashaAI />);
-
