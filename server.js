@@ -1,7 +1,5 @@
 
 
-
-
 const express = require("express");
 const path = require("path");
 
@@ -10,7 +8,6 @@ const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "2mb" }));
 
-// Gemini primary and backup models
 const MODELS = [
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite"
@@ -20,50 +17,61 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY;
 const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID;
 
-// Sasha AI personality
 const SYSTEM_INSTRUCTION = `
 You are Sasha AI, a smart, friendly Jamaican female AI assistant.
 
-Your personality:
-- Warm, natural and friendly Jamaican personality.
+PERSONALITY:
+- Warm, natural and friendly.
 - Speak clear, natural English with occasional gentle Jamaican expressions.
 - Be intelligent, helpful, conversational and practical.
 - Give direct answers in plain English.
-- Understand context from previous messages.
-- Explain technology and complicated topics simply.
+- Remember and use the conversation context provided.
+- Explain complicated topics simply.
 - Be confident but honest when you do not know something.
 - Keep answers relevant and avoid unnecessary repetition.
-- Think carefully and give useful, accurate answers.
+- Give useful, accurate answers.
 
-Never:
-- Write poems or rhymes.
+NEVER:
+- Write poems or rhymes unless specifically requested.
 - Use roleplay narration or stage directions.
 - Describe actions in brackets.
 - Make every answer sound like a performance.
 - Invent facts or pretend to have completed actions.
+- Claim to access accounts, websites or devices unless a connected tool actually allows it.
 
 You are Sasha AI. Speak naturally, like a helpful person having a conversation.
 `;
 
-// Prepare conversation history
 function prepareContents(messages) {
-  return messages
+  const valid = messages
     .filter(message =>
       message &&
       typeof message.text === "string" &&
       message.text.trim()
     )
-    .slice(-30)
-    .map(message => ({
-      role:
-        message.role === "assistant" || message.role === "model"
-          ? "model"
-          : "user",
-      parts: [{ text: message.text }]
-    }));
+    .slice(-30);
+
+  // Gemini conversations should begin with a user message.
+  const firstUserIndex = valid.findIndex(
+    message => message.role !== "assistant" &&
+               message.role !== "model"
+  );
+
+  if (firstUserIndex === -1) return [];
+
+  return valid.slice(firstUserIndex).map(message => ({
+    role:
+      message.role === "assistant" || message.role === "model"
+        ? "model"
+        : "user",
+    parts: [{ text: message.text.trim() }]
+  }));
 }
 
-// Request a Gemini model
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function requestGemini(model, contents, signal) {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
@@ -79,7 +87,7 @@ async function requestGemini(model, contents, signal) {
       },
       contents,
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.65,
         maxOutputTokens: 2048
       }
     }),
@@ -87,62 +95,77 @@ async function requestGemini(model, contents, signal) {
   });
 }
 
-// Try primary model, then backup model
 async function getGeminiStream(contents, signal) {
   let lastError = "No Gemini model was available.";
 
   for (const model of MODELS) {
     console.log(`Trying Gemini model: ${model}`);
 
-    try {
-      const response = await requestGemini(
-        model,
-        contents,
-        signal
-      );
-
-      if (response.ok) {
-        console.log(`Gemini connected successfully: ${model}`);
-        return response;
-      }
-
-      const detail = await response.text();
-
-      console.error(
-        `Gemini ${model} error:`,
-        response.status,
-        detail
-      );
-
-      lastError = detail || `HTTP ${response.status}`;
-
-      if ([429, 500, 502, 503, 504].includes(response.status)) {
-        console.log(`Trying the next Gemini model.`);
-        continue;
-      }
-
-      throw new Error(
-        `Gemini returned HTTP ${response.status}: ${lastError}`
-      );
-
-    } catch (error) {
+    // Retry temporary server/network failures once.
+    for (let attempt = 1; attempt <= 2; attempt++) {
       if (signal.aborted) {
-        throw error;
+        throw new Error("The request was cancelled.");
       }
 
-      if (error.message.startsWith("Gemini returned HTTP")) {
-        throw error;
-      }
+      try {
+        const response = await requestGemini(
+          model,
+          contents,
+          signal
+        );
 
-      lastError = error.message;
-      console.error(`Gemini connection error: ${error.message}`);
+        if (response.ok) {
+          console.log(`Gemini connected: ${model}`);
+          return response;
+        }
+
+        const detail = await response.text();
+        lastError = detail || `HTTP ${response.status}`;
+
+        console.error(
+          `Gemini ${model} returned ${response.status}:`,
+          detail
+        );
+
+        // A 429 usually means quota/rate limits.
+        // Move to the backup model instead of repeatedly waiting.
+        if (response.status === 429) {
+          break;
+        }
+
+        const temporaryError = [
+          500, 502, 503, 504
+        ].includes(response.status);
+
+        if (temporaryError && attempt === 1) {
+          await wait(700);
+          continue;
+        }
+
+        break;
+
+      } catch (error) {
+        if (signal.aborted) throw error;
+
+        lastError = error.message || "Network error.";
+
+        console.error(
+          `Gemini connection issue (${model}):`,
+          lastError
+        );
+
+        if (attempt === 1) {
+          await wait(700);
+        }
+      }
     }
   }
 
-  throw new Error(`All Gemini models failed. ${lastError}`);
+  throw new Error(
+    `Sasha could not reach Gemini. ${lastError}`
+  );
 }
 
-// Send an event in the format expected by App.jsx
 function sendEvent(res, eventName, data) {
   if (!res.destroyed && !res.writableEnded) {
     res.write(`event: ${eventName}\n`);
@@ -150,7 +173,6 @@ function sendEvent(res, eventName, data) {
   }
 }
 
-// Process one Gemini SSE event
 function processGeminiEvent(event, res) {
   const dataLines = event
     .split("\n")
@@ -168,7 +190,7 @@ function processGeminiEvent(event, res) {
   try {
     parsed = JSON.parse(rawData);
   } catch {
-    console.error("Gemini event parsing error:", rawData);
+    console.error("Could not parse Gemini event:", rawData);
     throw new Error("Gemini returned an unreadable response.");
   }
 
@@ -184,16 +206,9 @@ function processGeminiEvent(event, res) {
   let combinedText = "";
 
   for (const part of parts) {
-    if (typeof part.text === "string" && part.text.length > 0) {
+    if (typeof part.text === "string") {
       combinedText += part.text;
     }
-  }
-
-  if (parsed.candidates?.[0]?.finishReason) {
-    console.log(
-      "Gemini finish reason:",
-      parsed.candidates[0].finishReason
-    );
   }
 
   if (combinedText) {
@@ -203,15 +218,14 @@ function processGeminiEvent(event, res) {
   return combinedText;
 }
 
-// Chat endpoint
 app.post("/api/chat", async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(500).json({
-      error: "GEMINI_API_KEY is missing in Render."
+      error: "GEMINI_API_KEY is missing in Render environment variables."
     });
   }
 
-  const messages = req.body.messages;
+  const messages = req.body?.messages;
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({
@@ -223,7 +237,7 @@ app.post("/api/chat", async (req, res) => {
 
   if (!contents.length) {
     return res.status(400).json({
-      error: "No valid messages were received."
+      error: "No valid user message was received."
     });
   }
 
@@ -250,10 +264,15 @@ app.post("/api/chat", async (req, res) => {
       throw new Error("Gemini returned an empty response stream.");
     }
 
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.status(200);
+    res.setHeader(
+      "Content-Type",
+      "text/event-stream; charset=utf-8"
+    );
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
 
     let reply = "";
     let buffer = "";
@@ -284,15 +303,15 @@ app.post("/api/chat", async (req, res) => {
       reply += processGeminiEvent(buffer, res);
     }
 
-    console.log(
-      `Gemini response completed. Text characters: ${reply.length}`
-    );
-
     if (!reply.trim()) {
       throw new Error(
         "Gemini connected but returned no text. Please try again."
       );
     }
+
+    console.log(
+      `Gemini response completed: ${reply.length} characters.`
+    );
 
     sendEvent(res, "done", { reply });
 
@@ -319,12 +338,12 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Fish Audio speech endpoint
-// Supports both GET (used by App.jsx) and POST.
+// Fish Audio speech endpoint.
+// Streams audio chunks to the browser as they arrive.
 async function generateSpeech(req, res) {
   if (!FISH_AUDIO_API_KEY || !FISH_AUDIO_VOICE_ID) {
     return res.status(500).json({
-      error: "Fish Audio API key or voice ID is missing."
+      error: "Fish Audio API key or voice ID is missing in Render."
     });
   }
 
@@ -332,7 +351,7 @@ async function generateSpeech(req, res) {
     ? req.query.text
     : req.body?.text;
 
-  if (!text || typeof text !== "string") {
+  if (typeof text !== "string" || !text.trim()) {
     return res.status(400).json({
       error: "Speech text is required."
     });
@@ -347,6 +366,7 @@ async function generateSpeech(req, res) {
   const controller = new AbortController();
 
   const timeout = setTimeout(() => {
+    console.error("Fish Audio request timed out.");
     controller.abort();
   }, 60000);
 
@@ -357,45 +377,65 @@ async function generateSpeech(req, res) {
   });
 
   try {
-    const response = await fetch("https://api.fish.audio/v1/tts", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${FISH_AUDIO_API_KEY}`,
-        "Content-Type": "application/json",
-        "model": "s2.1-pro-free"
-      },
-      body: JSON.stringify({
-        text,
-        reference_id: FISH_AUDIO_VOICE_ID,
-        format: "mp3",
-        latency: "balanced"
-      }),
-      signal: controller.signal
-    });
+    const response = await fetch(
+      "https://api.fish.audio/v1/tts",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${FISH_AUDIO_API_KEY}`,
+          "Content-Type": "application/json",
+          "model": "s2.1-pro-free"
+        },
+        body: JSON.stringify({
+          text: text.trim(),
+          reference_id: FISH_AUDIO_VOICE_ID,
+          format: "mp3",
+          latency: "balanced"
+        }),
+        signal: controller.signal
+      }
+    );
 
     if (!response.ok) {
       const detail = await response.text();
 
-      console.error("Fish Audio error:", response.status, detail);
+      console.error(
+        "Fish Audio error:",
+        response.status,
+        detail
+      );
 
-      if (!res.headersSent) {
-        return res.status(response.status).json({
-          error: "Fish Audio could not generate speech.",
-          details: detail
-        });
-      }
-
-      return;
+      return res.status(response.status).json({
+        error: "Fish Audio could not generate speech.",
+        details: detail
+      });
     }
 
-    const audioBuffer = Buffer.from(
-      await response.arrayBuffer()
-    );
+    if (!response.body) {
+      throw new Error("Fish Audio returned no audio stream.");
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    const reader = response.body.getReader();
+
+    while (true) {
+      const { value, done } = await reader.read();
+
+      if (done) break;
+      if (res.destroyed || res.writableEnded) break;
+
+      if (!res.write(Buffer.from(value))) {
+        await new Promise(resolve => res.once("drain", resolve));
+      }
+    }
 
     if (!res.destroyed && !res.writableEnded) {
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Cache-Control", "no-cache");
-      res.send(audioBuffer);
+      res.end();
     }
 
   } catch (error) {
@@ -405,6 +445,8 @@ async function generateSpeech(req, res) {
       res.status(500).json({
         error: "Sasha's voice service could not respond."
       });
+    } else if (!res.destroyed && !res.writableEnded) {
+      res.end();
     }
 
   } finally {
@@ -415,14 +457,13 @@ async function generateSpeech(req, res) {
 app.get("/api/speech", generateSpeech);
 app.post("/api/speech", generateSpeech);
 
-// Serve React application
+// Serve the React application.
 app.use(express.static(path.join(__dirname, "dist")));
 
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Sasha AI running on port ${PORT}`);
   console.log(`Primary model: ${MODELS[0]}`);
