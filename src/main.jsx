@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -21,10 +20,13 @@ function SashaAI() {
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
+  const audioUrlRef = useRef(null);
+
   const voiceRequestRef = useRef(0);
   const speechQueueRef = useRef([]);
   const speechWorkerRef = useRef(false);
   const voiceEnabledRef = useRef(true);
+  const nextSpeechRef = useRef(null);
 
   useEffect(() => {
     voiceEnabledRef.current = voiceEnabled;
@@ -44,12 +46,18 @@ function SashaAI() {
         audioRef.current.pause();
         audioRef.current.src = "";
       }
+
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
     };
   }, []);
 
   function stopSpeaking() {
     voiceRequestRef.current++;
+
     speechQueueRef.current = [];
+    nextSpeechRef.current = null;
     speechWorkerRef.current = false;
 
     if (audioRef.current) {
@@ -58,16 +66,77 @@ function SashaAI() {
       audioRef.current = null;
     }
 
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+
     setSpeaking(false);
   }
 
-  function queueSpeech(text) {
-    if (!voiceEnabledRef.current || !text.trim()) return;
+  async function fetchSpeech(text, requestId) {
+    const response = await fetch("/api/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text })
+    });
 
-    speechQueueRef.current.push(text.trim());
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+
+      throw new Error(
+        errorData.error || "Fish Audio could not generate speech."
+      );
+    }
+
+    const audioBlob = await response.blob();
+
+    if (
+      requestId !== voiceRequestRef.current ||
+      !voiceEnabledRef.current
+    ) {
+      return null;
+    }
+
+    return URL.createObjectURL(audioBlob);
+  }
+
+  function prepareNextSpeech(requestId) {
+    if (
+      !speechQueueRef.current.length ||
+      requestId !== voiceRequestRef.current ||
+      !voiceEnabledRef.current
+    ) {
+      return null;
+    }
+
+    const text = speechQueueRef.current.shift();
+
+    return fetchSpeech(text, requestId);
+  }
+
+  function queueSpeech(text) {
+    const cleanText = text.trim();
+
+    if (!voiceEnabledRef.current || !cleanText) return;
+
+    speechQueueRef.current.push(cleanText);
 
     if (!speechWorkerRef.current) {
       playSpeechQueue();
+      return;
+    }
+
+    // Prepare the next audio while the current segment plays.
+    if (
+      audioRef.current &&
+      !nextSpeechRef.current &&
+      speechQueueRef.current.length
+    ) {
+      const requestId = voiceRequestRef.current;
+      nextSpeechRef.current = prepareNextSpeech(requestId);
     }
   }
 
@@ -75,47 +144,31 @@ function SashaAI() {
     if (speechWorkerRef.current) return;
 
     speechWorkerRef.current = true;
+
     const requestId = voiceRequestRef.current;
 
-    while (
-      speechQueueRef.current.length > 0 &&
-      requestId === voiceRequestRef.current &&
-      voiceEnabledRef.current
-    ) {
-      const text = speechQueueRef.current.shift();
+    try {
+      let preparedUrl = await prepareNextSpeech(requestId);
 
-      try {
-        // Server expects POST with JSON, not GET.
-        const response = await fetch("/api/speech", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ text })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            errorData.error || "Fish Audio could not generate speech."
-          );
-        }
-
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
+      while (
+        preparedUrl &&
+        requestId === voiceRequestRef.current &&
+        voiceEnabledRef.current
+      ) {
+        const audio = new Audio(preparedUrl);
 
         audioRef.current = audio;
         audio.preload = "auto";
+        audioUrlRef.current = preparedUrl;
 
-        audio.onplay = () => {
-          if (requestId === voiceRequestRef.current) {
-            setSpeaking(true);
-            setVoiceError("");
-          }
-        };
+        const playback = new Promise((resolve, reject) => {
+          audio.onplay = () => {
+            if (requestId === voiceRequestRef.current) {
+              setSpeaking(true);
+              setVoiceError("");
+            }
+          };
 
-        await new Promise((resolve, reject) => {
           audio.onended = resolve;
 
           audio.onerror = () => {
@@ -125,31 +178,56 @@ function SashaAI() {
           audio.play().catch(reject);
         });
 
-        URL.revokeObjectURL(audioUrl);
-
-        if (requestId === voiceRequestRef.current) {
-          audioRef.current = null;
-          setSpeaking(false);
+        // Start generating the following segment during playback.
+        if (
+          speechQueueRef.current.length &&
+          !nextSpeechRef.current
+        ) {
+          nextSpeechRef.current = prepareNextSpeech(requestId);
         }
 
-      } catch (error) {
-        if (requestId === voiceRequestRef.current) {
-          console.error("Sasha voice error:", error);
-          setVoiceError(error.message);
-          setSpeaking(false);
+        await playback;
+
+        URL.revokeObjectURL(preparedUrl);
+
+        if (audioUrlRef.current === preparedUrl) {
+          audioUrlRef.current = null;
+        }
+
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
+
+        if (requestId !== voiceRequestRef.current) break;
+
+        setSpeaking(false);
+
+        if (nextSpeechRef.current) {
+          preparedUrl = await nextSpeechRef.current;
+          nextSpeechRef.current = null;
+        } else {
+          preparedUrl = await prepareNextSpeech(requestId);
         }
       }
-    }
 
-    if (requestId === voiceRequestRef.current) {
-      speechWorkerRef.current = false;
-      setSpeaking(false);
+    } catch (error) {
+      if (requestId === voiceRequestRef.current) {
+        console.error("Sasha voice error:", error);
+        setVoiceError(error.message);
+        setSpeaking(false);
+      }
 
-      if (
-        speechQueueRef.current.length > 0 &&
-        voiceEnabledRef.current
-      ) {
-        playSpeechQueue();
+    } finally {
+      if (requestId === voiceRequestRef.current) {
+        speechWorkerRef.current = false;
+        setSpeaking(false);
+
+        if (
+          speechQueueRef.current.length &&
+          voiceEnabledRef.current
+        ) {
+          playSpeechQueue();
+        }
       }
     }
   }
@@ -202,7 +280,13 @@ function SashaAI() {
     recognition.onend = () => setListening(false);
 
     recognitionRef.current = recognition;
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error("Microphone error:", error);
+      setListening(false);
+    }
   }
 
   async function sendMessage(e) {
@@ -283,8 +367,9 @@ function SashaAI() {
           return;
         }
 
+        // Prefer complete sentences for natural speech.
         const sentenceMatch = speechBuffer.match(
-          /^([\s\S]*?[.!?])(?:\s+|$)/
+          /^([\s\S]*?[.!?])(?=\s|$)/
         );
 
         if (sentenceMatch) {
@@ -294,15 +379,18 @@ function SashaAI() {
             .slice(sentenceMatch[0].length)
             .trimStart();
 
-          if (sentence) queueSpeech(sentence);
+          if (sentence) {
+            queueSpeech(sentence);
+          }
 
           return;
         }
 
-        if (speechBuffer.length >= 180) {
-          const splitAt = speechBuffer.lastIndexOf(" ", 160);
+        // Prevent unusually long chunks if a sentence is very long.
+        if (speechBuffer.length >= 300) {
+          const splitAt = speechBuffer.lastIndexOf(" ", 260);
 
-          if (splitAt > 60) {
+          if (splitAt > 100) {
             queueSpeech(
               speechBuffer.slice(0, splitAt).trim()
             );
@@ -336,15 +424,16 @@ function SashaAI() {
 
         try {
           data = JSON.parse(rawData);
-        } catch (error) {
+        } catch {
           console.error("Sasha stream parsing error:", rawData);
           streamError = "Sasha sent an unreadable response.";
           return;
         }
 
-        // Read the format actually sent by server.js:
-        // data: {"text":"Hello"}
-        if (typeof data.text === "string" && data.text.length > 0) {
+        if (
+          typeof data.text === "string" &&
+          data.text.length > 0
+        ) {
           reply += data.text;
           speechBuffer += data.text;
 
@@ -375,7 +464,6 @@ function SashaAI() {
           stream: true
         });
 
-        // Handle both Windows and Unix line endings.
         buffer = buffer.replace(/\r\n/g, "\n");
 
         const blocks = buffer.split("\n\n");
@@ -407,6 +495,7 @@ function SashaAI() {
         );
       }
 
+      // Speak any remaining words after the final sentence.
       if (voiceEnabledRef.current && speechBuffer.trim()) {
         queueSpeech(speechBuffer.trim());
         speechBuffer = "";
@@ -417,7 +506,6 @@ function SashaAI() {
 
       setMessages(prev => {
         const updated = [...prev];
-
         const last = updated.length - 1;
 
         if (
@@ -439,6 +527,7 @@ function SashaAI() {
 
         return updated;
       });
+
     } finally {
       setLoading(false);
     }
@@ -577,12 +666,6 @@ function SashaAI() {
       background: linear-gradient(135deg, #1769a9, #17477c);
       border: 1px solid #398bd0;
       border-bottom-right-radius: 4px;
-    }
-
-    .typing {
-      color: #8ecbff;
-      font-size: 13px;
-      padding: 10px;
     }
 
     .suggestions {
@@ -802,4 +885,3 @@ function SashaAI() {
 createRoot(
   document.getElementById("root")
 ).render(<SashaAI />);
-
