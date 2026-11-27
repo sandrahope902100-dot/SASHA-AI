@@ -1,4 +1,4 @@
-const CACHE_NAME = "sasha-ai-shell-v1";
+const CACHE_NAME = "sasha-ai-shell-v2";
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest", "/sasha-avatar.jpg"];
 
 self.addEventListener("install", event => {
