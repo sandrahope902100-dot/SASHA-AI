@@ -89,3 +89,25 @@ Start with one business and one bounded use case: answering a small set of commo
 The application is live and can support a supervised demonstration. The customer-service action-truth safeguards and PWA cache refresh have been deployed, but the acceptance tests above remain open. Do not describe Sasha AI as commercially ready until the critical risks are addressed and the applicable tests pass.
 
 This document records the current engineering assessment; it does not claim that pending tests have passed.
+
+
+## 9. Recheck — 27 November 2026
+The parent venture's public website and directory policy were updated separately. These website changes do not change Sasha AI's technical readiness and do not constitute an application deployment.
+
+Current Render configuration was rechecked:
+- Web service remains on the Free plan with one instance in Oregon.
+- Auto-deploy remains disabled; manual deployment is required after application commits.
+- Render service metadata still reports an empty health-check path. The Render connector available for this audit does not expose a service-settings update operation, so this was not changed.
+- The public `/healthz` endpoint has not been independently confirmed to return HTTP 200 in this audit. Do not mark health monitoring complete.
+- Latest confirmed live app deployment remains `dep-dc4u2ujl550s73ao4g6g` from commit `4d682411431d1710ad9027026e9afb586ebe3017`. No new Sasha AI application code was deployed as part of this audit.
+
+The previous acceptance-test table remains open. No test is promoted to PASS without a fresh, recorded test result. The launch decision remains **supervised demonstration only; not approved for paid or unsupervised business deployment**.
+
+## 10. Required closure work
+1. Verify `/healthz` returns HTTP 200 and configure Render's health-check path to `/healthz` in the service dashboard.
+2. Pin runtime dependencies and commit a reproducible lockfile; review security advisories.
+3. Repeat Android Chrome, PWA install/update, microphone permission, text, voice, context, timeout, provider-failure and action-truthfulness tests.
+4. Test abuse limits and confirm safe logging without credentials or private conversation content.
+5. Establish a business-approved knowledge source and test unknown-answer handling.
+6. Before any customer pilot, define consent, data retention, deletion, access, escalation, support and incident procedures with the business.
+7. Keep the first pilot limited to a supervised FAQ demonstration; do not promise booking, payment, CRM, lead capture or automated human handoff.
