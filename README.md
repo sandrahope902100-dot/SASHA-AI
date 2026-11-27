@@ -8,12 +8,13 @@ Live application: https://sasha-ai-ttk7.onrender.com/
 
 - Text chat powered by the Gemini API through a server-side endpoint.
 - Streaming text responses.
-- Optional generated speech through Fish Audio.
+- Optional generated speech through Fish Audio; the current `s2.1-pro-free` model has a published free-access end date of 30 November 2026, so recheck availability and terms before 1 December 2026.
 - Browser microphone input where supported.
 - Mobile-friendly web app with installable PWA support.
 - Lightweight service health endpoint at `/healthz`.
 - Optional single-business configuration through the server-side `BUSINESS_PROFILE_JSON` environment variable.
 - Public-safe business branding endpoint at `/api/config`.
+- In-app prototype privacy notice explains the Gemini and Fish Audio data flow; chat history is not persisted by this app.
 - Per-IP chat and speech throttling, request-size limits, and clearer upstream error handling.
 
 ## Important current limitations
