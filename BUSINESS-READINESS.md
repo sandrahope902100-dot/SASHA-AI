@@ -14,11 +14,12 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 ## 2. Verified deployment facts
 
 - Render service: `SASHA-AI`
-- Latest confirmed live deployment: `dep-dc4th58u01pc73fbdvn0`
-- Live commit: `6c6412bfb2f2c060c5874cbaf25000fea8a8e892`
-- Latest deployed server update strengthens action-truth safeguards for customer-service conversations.
+- Latest confirmed live deployment: `dep-dc4u2ujl550s73ao4g6g`
+- Latest live commit: `4d682411431d1710ad9027026e9afb586ebe3017`
+- The latest deployment refreshes the PWA shell cache version so installed clients can request the updated application shell.
+- The preceding application code deployment includes customer-service action-truth safeguards: `6c6412bfb2f2c060c5874cbaf25000fea8a8e892`.
 - Render service is configured for manual deployment; GitHub commits do not automatically deploy.
-- Server code includes a `GET /healthz` endpoint. Render's service metadata currently shows no health-check path configured; live HTTP verification is still pending.
+- Server code includes a `GET /healthz` endpoint. Render's service metadata still shows no health-check path configured; live HTTP verification is still pending.
 - Primary model default in code: `gemini-3.1-flash-lite`.
 - Backup model default in code: `gemini-3.5-flash-lite`.
 - Fish Audio speech is configured through server-side environment variables.
@@ -45,6 +46,7 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 7. **Dependency reproducibility:** dependencies in `package.json` include `latest` versions and the repository does not currently have a lockfile. Pin versions and commit a lockfile before a dependable production release.
 8. **Observability:** request timing and safe operational telemetry need improvement. Logs must never include credentials or private customer conversations.
 9. **Health monitoring:** configure Render's health-check path to `/healthz` only after confirming that endpoint returns HTTP 200 on the live service.
+10. **Fresh acceptance testing:** the PWA cache refresh is deployed, but this does not prove every installed Android client refreshed successfully. Repeat mobile, voice, microphone, context and truthfulness tests.
 
 ## 5. What may be demonstrated today
 
@@ -84,6 +86,6 @@ Start with one business and one bounded use case: answering a small set of commo
 
 **Current decision: NOT READY for paid or unsupervised business deployment.**
 
-The application is live and can support a supervised demonstration. The customer-service action-truth safeguards have been deployed, but the acceptance tests above remain open. Do not describe Sasha AI as commercially ready until the critical risks are addressed and the applicable tests pass.
+The application is live and can support a supervised demonstration. The customer-service action-truth safeguards and PWA cache refresh have been deployed, but the acceptance tests above remain open. Do not describe Sasha AI as commercially ready until the critical risks are addressed and the applicable tests pass.
 
 This document records the current engineering assessment; it does not claim that pending tests have passed.
