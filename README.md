@@ -12,16 +12,20 @@ Live application: https://sasha-ai-ttk7.onrender.com/
 - Browser microphone input where supported.
 - Mobile-friendly web app with installable PWA support.
 - Lightweight service health endpoint at `/healthz`.
+- Optional single-business configuration through the server-side `BUSINESS_PROFILE_JSON` environment variable.
+- Public-safe business branding endpoint at `/api/config`.
+- Per-IP chat and speech throttling, request-size limits, and clearer upstream error handling.
 
 ## Important current limitations
 
 Sasha AI is currently a public general-purpose assistant prototype, not yet a complete multi-business customer-service platform.
 
-- It does not currently provide isolated business accounts or a managed business knowledge base.
-- It does not currently provide appointment booking, payments, CRM integration, or guaranteed lead capture.
-- AI responses can be delayed or unavailable when upstream model services reach quota limits or experience outages.
+- The current business profile is a server-side configuration for one business per deployment; there is no multi-tenant account system or self-service admin dashboard.
+- It does not provide appointment booking, payments, CRM integration, human handoff, persistent lead capture, or subscription billing.
+- The first request limiter is in-memory and per IP. It is a basic safeguard for the current single-instance prototype, not production-grade distributed abuse protection.
+- AI responses can still be delayed or unavailable when upstream model services reach quota limits or experience outages.
 - Speech generation depends on the availability and limits of Fish Audio.
-- Public API endpoints need stronger abuse protection and operational monitoring before commercial customer traffic is invited.
+- A business profile must be reviewed and approved by the business owner before customer use.
 
 Do not rely on Sasha AI as the sole source for business-critical, financial, legal, medical, or emergency decisions. Business-specific facts such as prices, availability, policies, and opening hours must be supplied and verified before being presented to customers.
 
@@ -33,6 +37,37 @@ The application is hosted on Render. The web service currently uses:
 - Start: `npm start`
 
 The Render service currently has automatic deployment disabled; a GitHub commit does not automatically mean the live service has been updated.
+
+## Configuring one pilot business
+
+Add a server-side Render environment variable named `BUSINESS_PROFILE_JSON`. Its value must be valid JSON and should contain only business-approved information. Example:
+
+```json
+{
+  "name": "Example Roofing",
+  "description": "Residential roof repair and replacement services.",
+  "services": ["Roof repairs", "Roof replacement"],
+  "serviceArea": "Approved service area",
+  "openingHours": "Monday to Friday, 8:00 AM to 5:00 PM",
+  "publicPhone": "+1-000-000-0000",
+  "publicEmail": "hello@example.com",
+  "website": "https://example.com",
+  "policies": {
+    "warranty": "Use the exact warranty wording approved by the business.",
+    "refunds": "Refund requests are reviewed by an authorized manager."
+  },
+  "faqs": [
+    {
+      "question": "Do you offer roof inspections?",
+      "answer": "Contact the office to confirm the current inspection service and availability."
+    }
+  ]
+}
+```
+
+Replace every example value with facts the business owner has verified. Do not use placeholder contact details in a live profile. The profile is included in the model's server-side instructions and is not returned in full to the browser. The public `/api/config` endpoint returns only the business name, description, and explicitly public contact fields.
+
+For this first phase, configure one business per Render deployment. Do not treat this as multi-tenant isolation. The current in-memory rate limits are 12 chat requests and 18 speech requests per IP per minute; use a shared rate-limit store before scaling beyond one server instance.
 
 ## Business pilot readiness
 
