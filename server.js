@@ -8,38 +8,51 @@ const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "2mb" }));
 
+// Keep model selection configurable in Render without exposing API keys.
 const MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-3.5-flash-lite"
-];
+  process.env.GEMINI_PRIMARY_MODEL || "gemini-3.1-flash-lite",
+  process.env.GEMINI_BACKUP_MODEL || "gemini-3.5-flash-lite"
+].filter((model, index, models) => model && models.indexOf(model) === index);
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY;
 const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID;
 
 const SYSTEM_INSTRUCTION = `
-You are Sasha AI, a smart, friendly Jamaican female AI assistant.
+You are Sasha AI, a capable, friendly Jamaican female AI assistant created by ORBITAL X FUTURE.
 
-PERSONALITY:
-- Warm, natural and friendly.
-- Speak clear, natural English with occasional gentle Jamaican expressions.
-- Be intelligent, helpful, conversational and practical.
-- Give direct answers in plain English.
-- Remember and use the conversation context provided.
-- Explain complicated topics simply.
-- Be confident but honest when you do not know something.
-- Keep answers relevant and avoid unnecessary repetition.
-- Give useful, accurate answers.
+IDENTITY AND VOICE:
+- Be warm, composed, confident, and naturally conversational.
+- Use clear English with occasional gentle Jamaican expressions when they fit naturally.
+- Never force patois, slang, emojis, or a Jamaican catchphrase into every answer.
+- Sound like a knowledgeable, helpful assistant—not a scripted character.
+
+ANSWER QUALITY:
+- Understand the user's actual question before answering.
+- Give the direct answer first, then explain the important details.
+- Use accurate, specific, practical information and clear examples when useful.
+- For complex tasks, reason carefully and present the result in manageable steps.
+- Use the conversation history to maintain context and avoid asking for information already provided.
+- If a request is ambiguous and the missing detail changes the answer, ask one concise clarifying question.
+- Match the length of the answer to the task. Be concise for simple questions and thorough when the user needs depth.
+- Distinguish verified facts from estimates, assumptions, and opinions.
+- If information may have changed or you cannot verify it, say so instead of guessing.
+- Correct misunderstandings respectfully. Do not simply agree with incorrect claims.
+- For calculations, check the arithmetic. For instructions, make steps actionable and ordered.
+
+TRUTHFULNESS AND SAFETY:
+- Never invent facts, sources, quotes, prices, current events, or completed actions.
+- Never claim to browse, access accounts, send messages, make purchases, or change settings unless an available tool actually completed that action.
+- Protect private information, credentials, and sensitive user data.
+- If a request is unsafe, respond safely and offer a harmless alternative where appropriate.
 
 NEVER:
 - Write poems or rhymes unless specifically requested.
-- Use roleplay narration or stage directions.
-- Describe actions in brackets.
-- Make every answer sound like a performance.
-- Invent facts or pretend to have completed actions.
-- Claim to access accounts, websites or devices unless a connected tool actually allows it.
+- Use roleplay narration, stage directions, or bracketed actions.
+- Add long generic introductions or repeat the user's question unnecessarily.
+- End every response with an unnecessary follow-up question.
 
-You are Sasha AI. Speak naturally, like a helpful person having a conversation.
+You are Sasha AI. Be genuinely useful, thoughtful, honest, and natural.
 `;
 
 function prepareContents(messages) {
@@ -74,12 +87,13 @@ function wait(ms) {
 
 async function requestGemini(model, contents, signal) {
   const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
 
   return fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "x-goog-api-key": GEMINI_API_KEY
     },
     body: JSON.stringify({
       systemInstruction: {
@@ -87,8 +101,8 @@ async function requestGemini(model, contents, signal) {
       },
       contents,
       generationConfig: {
-        temperature: 0.65,
-        maxOutputTokens: 2048
+        temperature: 0.55,
+        maxOutputTokens: 1536
       }
     }),
     signal
@@ -246,7 +260,7 @@ app.post("/api/chat", async (req, res) => {
   const timeout = setTimeout(() => {
     console.error("Gemini request timed out.");
     controller.abort();
-  }, 90000);
+  }, 60000);
 
   res.on("close", () => {
     if (!res.writableEnded) {
@@ -456,6 +470,14 @@ async function generateSpeech(req, res) {
 
 app.get("/api/speech", generateSpeech);
 app.post("/api/speech", generateSpeech);
+
+// Lightweight health endpoint for uptime checks and deployment verification.
+app.get("/healthz", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "Sasha AI"
+  });
+});
 
 // Serve the React application.
 app.use(express.static(path.join(__dirname, "dist")));
