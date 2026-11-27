@@ -14,7 +14,7 @@ Live application: https://sasha-ai-ttk7.onrender.com/
 - Lightweight service health endpoint at `/healthz`.
 - Optional single-business configuration through the server-side `BUSINESS_PROFILE_JSON` environment variable.
 - Public-safe business branding endpoint at `/api/config`.
-- In-app prototype privacy notice explains the Gemini and Fish Audio data flow; chat history is not persisted by this app.
+- In-app prototype privacy notice explains the Gemini, browser speech-recognition and Fish Audio data flows; chat history is not persisted by this app.
 - Per-IP chat and speech throttling, request-size limits, and clearer upstream error handling.
 
 ## Important current limitations
