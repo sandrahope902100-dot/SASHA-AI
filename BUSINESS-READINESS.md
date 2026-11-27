@@ -41,12 +41,16 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 2. **No commercial customer controls:** no business login, usage dashboard, subscription/billing, CRM, or customer handoff workflow is implemented.
 3. **No operational actions:** Sasha cannot book appointments, process orders, collect payments, issue refunds, create CRM records, or notify a human team.
 4. **AI provider availability:** Gemini quota, model availability, latency, and upstream errors can interrupt responses. A backup model does not guarantee uninterrupted service.
-5. **Voice provider dependency:** Fish Audio latency, availability, and account limits need independent testing.
+5. **Voice provider dependency:** the current code calls Fish Audio `s2.1-pro-free`. Fish Audio currently states that free access runs through 30 November 2026, with no SLA or latency guarantee, possible model-improvement data use, and possible restrictions for some commercial scenarios. Reconfirm terms or choose a supported paid/alternative provider before relying on voice after that date.
 6. **Rate-limit scope:** counters are in memory and suitable only for the current single-instance prototype. They are not distributed protection and need replacement before multi-instance or higher-volume use.
 7. **Dependency reproducibility:** dependencies in `package.json` include `latest` versions and the repository does not currently have a lockfile. Pin versions and commit a lockfile before a dependable production release.
 8. **Observability:** request timing and safe operational telemetry need improvement. Logs must never include credentials or private customer conversations.
 9. **Health monitoring:** configure Render's health-check path to `/healthz` only after confirming that endpoint returns HTTP 200 on the live service.
 10. **Fresh acceptance testing:** the PWA cache refresh is deployed, but this does not prove every installed Android client refreshed successfully. Repeat mobile, voice, microphone, context and truthfulness tests.
+11. **No global usage budget:** per-IP in-memory limits do not cap total daily/monthly Gemini or Fish Audio usage. A distributed attacker or many IPs could exhaust provider quotas or paid credits.
+12. **PWA icon completeness:** the manifest currently references only one JPEG icon with `sizes: any`; standard 192×192 and 512×512 install icons are not present. Android installation behavior has not been verified.
+13. **Provider data terms:** if the Gemini project is on Google's free tier, Google's pricing documentation says free-tier content may be used to improve products. The account tier is not independently confirmed; do not send confidential or sensitive customer data.
+14. **Free hosting availability:** Render Free web services spin down after 15 minutes without inbound traffic and can take about a minute to wake. This is unsuitable for guaranteed customer availability.
 
 ## 5. What may be demonstrated today
 
@@ -148,3 +152,9 @@ The following items were checked against the current GitHub source and Render se
 
 ### Current release decision
 **Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest code changes are not considered live until the manual Render deployment reports `live` and the startup logs are checked.
+
+
+## 10. Provider and hosting notes — 27 November 2026
+- Render health-check path is blank; `/healthz` exists in code but has not been independently verified over HTTP.
+- Recent startup logs show the process listening on port 10000 and Render reporting the service live; the retrieved recent log sample contained no application error entries. This does not replace a direct HTTP health check.
+- The startup log states that no business profile is configured. Sasha is therefore running as a general assistant, not as an owner-approved customer-service assistant for a particular business.
