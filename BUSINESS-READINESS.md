@@ -29,16 +29,17 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 
 ### Critical before public business traffic
 
-1. **Basic request throttling added in source, deployment and load testing pending:** the new code limits chat and speech requests per IP in memory. This is not distributed protection and is not sufficient for multiple instances or high-volume public traffic.
-2. **Single-business profile support added in source, deployment and verification pending:** `BUSINESS_PROFILE_JSON` can provide approved business facts and FAQs to one deployment. There is still no multi-tenant isolation, database-backed knowledge base, or business admin console.
+1. **Basic request throttling deployed; load testing pending:** the live code limits chat to 12 requests per IP per minute and speech to 18 requests per IP per minute using in-memory counters. This is not distributed protection and is not sufficient for multiple instances or high-volume public traffic.
+2. **Single-business profile support deployed; no profile configured yet:** `BUSINESS_PROFILE_JSON` can provide approved business facts and FAQs to one deployment. Render startup logs currently say the business profile is not configured. There is still no multi-tenant isolation, database-backed knowledge base, or business admin console.
 3. **No commercial customer controls:** no business login, usage dashboard, subscription/billing, or customer support workflow is implemented.
 4. **Upstream AI availability:** logs show prior Gemini quota (429), model availability (503), and aborted request errors. The configured backup model is not a guarantee of uninterrupted service.
 5. **Voice depends on a separate provider:** Fish Audio availability, latency, and account limits must be tested independently.
 
 ### Important engineering improvements
 
-- Deploy and verify the new request limits, input validation, business profile configuration, and public branding endpoint.
+- Configure a real pilot business profile using owner-approved facts, then test the profile through the live chat and branding endpoint.
 - Establish reproducible dependency versions and a lockfile.
+- Deploy the Vite config filename cleanup currently on GitHub.
 - Configure Render's health check to use the existing `/healthz` endpoint after verifying the endpoint on the live service.
 - Add structured request timing and safe error telemetry without logging credentials or private customer content.
 - Test mobile PWA behavior, microphone permissions, speech playback, interruption, and reconnect behavior.
@@ -68,8 +69,8 @@ The first business pilot should not be accepted until all applicable tests pass:
 | Error handling | Quota/network errors show a clear, safe message | Code review only; live test pending |
 | Voice | Speech starts, plays fully, and can be interrupted | Pending |
 | Microphone | Permission and transcript behavior work in supported browser | Pending |
-| Abuse protection | Per-IP limits return HTTP 429 at configured thresholds; load and multi-instance behavior reviewed | Source added; deployment/test pending |
-| Business knowledge | Profile facts and FAQs are used; missing facts are not invented | Source added; needs configured pilot profile and live test |
+| Abuse protection | Per-IP limits return HTTP 429 at configured thresholds; load and multi-instance behavior reviewed | Deployed; threshold/load test pending |
+| Business knowledge | Profile facts and FAQs are used; missing facts are not invented | Deployed; profile not configured; live content test pending |
 | Privacy | No credentials or sensitive conversation content are exposed in logs | Requires review |
 | Mobile usability | Keyboard, scrolling, buttons, and PWA install work on Android | Pending |
 
