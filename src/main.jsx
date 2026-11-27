@@ -994,7 +994,7 @@ function SashaAI() {
             SASHA AI • POWERED BY ORBITAL X FUTURE
           </div>
           <p className="privacy-notice">
-            Prototype privacy notice: Messages are sent to Google Gemini to generate replies. When voice is enabled, reply text is also sent to Fish Audio for speech generation. This app does not save chat history; refreshing the page clears this conversation. Provider processing and retention depend on their policies and your account tier. Do not enter passwords, payment details, confidential business information, or sensitive personal information.
+            Prototype privacy notice: Messages are sent to Google Gemini to generate replies. Microphone transcription uses your browser/device speech-recognition service and may be processed under that provider's terms. When voice is enabled, reply text is also sent to Fish Audio for speech generation. This app does not save chat history; refreshing the page clears this conversation. Provider processing and retention depend on their policies and your account tier. Do not enter passwords, payment details, confidential business information, or sensitive personal information.
           </p>
         </footer>
       </div>
