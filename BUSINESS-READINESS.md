@@ -151,7 +151,7 @@ The following items were checked against the current GitHub source and Render se
 8. Do not call the product commercially ready until the above blockers and acceptance tests are closed.
 
 ### Current release decision
-**Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest application runtime code deployment is live and startup logs were checked. Packaging-only changes (Node engine pin, `.gitignore` and audit documentation) were committed after that deployment and are not yet deployed; they do not change runtime behavior.
+**Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest application runtime deployment is live and startup logs were checked. Post-deployment source changes now include the approved welcome-message correction (`d439aafd824e60787f12a70c9cf0938da7e28585`) and style-boundary prompt correction (`b0ac342fc10ff1c67a18b2bc1d8a0e65e2a06cee`), plus the Node `24.x` pin, `.gitignore` and audit documentation. These changes are committed but not yet deployed; the live app still has the prior greeting/prompt until a manual deploy succeeds.
 
 
 ## 10. Provider and hosting notes — 27 November 2026
