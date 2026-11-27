@@ -841,6 +841,17 @@ function SashaAI() {
       letter-spacing: 1px;
     }
 
+    .privacy-notice {
+      max-width: 720px;
+      margin: 10px auto 0;
+      padding: 0 18px 8px;
+      color: #7890ab;
+      font-size: 10px;
+      line-height: 1.55;
+      text-align: center;
+      letter-spacing: 0;
+    }
+
     button:disabled {
       cursor: not-allowed;
     }
@@ -982,6 +993,9 @@ function SashaAI() {
           <div className="footer">
             SASHA AI • POWERED BY ORBITAL X FUTURE
           </div>
+          <p className="privacy-notice">
+            Prototype privacy notice: Messages are sent to Google Gemini to generate replies. When voice is enabled, reply text is also sent to Fish Audio for speech generation. This app does not save chat history; refreshing the page clears this conversation. Provider processing and retention depend on their policies and your account tier. Do not enter passwords, payment details, confidential business information, or sensitive personal information.
+          </p>
         </footer>
       </div>
     </>
