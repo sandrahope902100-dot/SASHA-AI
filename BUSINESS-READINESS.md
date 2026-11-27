@@ -111,3 +111,39 @@ The previous acceptance-test table remains open. No test is promoted to PASS wit
 5. Establish a business-approved knowledge source and test unknown-answer handling.
 6. Before any customer pilot, define consent, data retention, deletion, access, escalation, support and incident procedures with the business.
 7. Keep the first pilot limited to a supervised FAQ demonstration; do not promise booking, payment, CRM, lead capture or automated human handoff.
+
+
+## 11. Full source/configuration re-audit — 27 November 2026
+
+The following items were checked against the current GitHub source and Render service configuration. This is a code/configuration review, not a substitute for live acceptance testing.
+
+### Additional verified findings
+- The deployed service is a Render Free web service in Oregon, one instance, with manual deployment enabled.
+- Render's configured HTTP health-check path is still blank. The code contains `GET /healthz`, but no successful live HTTP response was independently recorded during this audit.
+- Latest service startup logs report the configured model defaults `gemini-3.1-flash-lite` and `gemini-3.5-flash-lite`, and report **Business profile: not configured**. This is therefore the general Sasha AI assistant, not a configured business assistant.
+- The latest source now adds `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Permissions-Policy` response header.
+- Chat and speech timeout failures now have explicit timeout messages instead of presenting a cancellation as the cause.
+- The app now discloses that messages go to Google Gemini and that reply text is sent to Fish Audio when voice is enabled. It also states that the app does not persist chat history and warns users not to enter sensitive or confidential information.
+- The frontend stores chat messages only in in-memory React state; a page refresh clears the visible conversation. The app has no user accounts or database-backed chat history.
+- The service worker caches the app shell and same-origin static assets; it deliberately does not cache `/api/` requests. The app is not an offline AI chatbot.
+- The manifest currently references one JPEG avatar with `sizes: any`; dedicated 192px and 512px PNG icons are absent. PWA installation/update behavior still requires an Android Chrome test.
+- The client uses browser speech recognition with language tag `en-JM`. Support and transcription accuracy on the target Android device remain untested.
+
+### Provider and hosting dependencies that affect readiness
+- Google lists `gemini-3.1-flash-lite` in its Gemini Developer API pricing documentation. The model name in the code is therefore not an obsolete model identifier. The actual API key's quota, project access, and account tier were not inspected.
+- Google's Gemini API pricing page distinguishes free and paid tiers: the page says free-tier content may be used to improve Google products, while paid-tier content is not. The user's actual API tier is unverified. Do not send customer-confidential data through a free-tier key.
+- The code requests Fish Audio model `s2.1-pro-free`. Fish Audio's published free-access notice says that free access is available through **30 November 2026**, with no SLA and possible model-improvement use of requests. Commercial use may have restrictions. Recheck the provider terms before 1 December 2026; do not promise continued free voice service.
+- Render documents that Free web services spin down after 15 minutes without inbound traffic and can take about one minute to wake. This can explain a slow first request after inactivity. It is a platform limitation, not necessarily a Gemini response-time defect.
+
+### Remaining engineering and commercial blockers
+1. Configure Render's health-check path to `/healthz` and independently verify its HTTP response. The endpoint reports process status and configuration flags; it does not prove Gemini or Fish Audio is reachable.
+2. Commit a lockfile and pin all runtime/build dependencies. Current `package.json` uses `latest` for Vite, React, React DOM and the Vite React plugin; the Render build command performs repeated `npm install` operations rather than a reproducible install.
+3. Review the Free-tier data handling of Gemini and Fish Audio. For customer use, select provider plans and settings that meet the business's privacy and contractual requirements.
+4. Re-test Android Chrome, PWA install/update, keyboard/scrolling, microphone permission and `en-JM` recognition, streamed text, voice playback, interruption, provider failures, timeout, rate limits and action-truthfulness.
+5. Confirm the Fish Audio free model's availability after 30 November 2026 or implement and test a clearly disclosed fallback. A browser/device voice fallback would not reproduce the cloned voice.
+6. Add a documented customer privacy notice, retention/deletion process, consent, support contact and incident response before collecting customer information. The in-app prototype notice is a minimum disclosure, not a complete legal privacy policy.
+7. Keep the current product supervised and demo-only. There is no multi-tenant isolation, customer admin, approved knowledge-base workflow, persistent lead capture, booking, payments, CRM, or human handoff.
+8. Do not call the product commercially ready until the above blockers and acceptance tests are closed.
+
+### Current release decision
+**Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest code changes are not considered live until the manual Render deployment reports `live` and the startup logs are checked.
