@@ -15,7 +15,7 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 
 - Render service: `SASHA-AI`
 - Latest confirmed live deployment: `dep-dc4ut197lnhs739vr1cg` (27 November 2026, 20:57:03 UTC)
-- Latest deployment branch-head commit: `49a1ed210d73fe2b0cf153dd1c144988b00f7c7d`; application runtime source commit: `26464cfce26ef2644c151b2b00f9082b0764d36a`.
+- Latest deployed commit: `49a1ed210d73fe2b0cf153dd1c144988b00f7c7d`; application runtime source commit: `26464cfce26ef2644c151b2b00f9082b0764d36a`. Later repository changes are packaging/documentation only and await manual redeployment.
 - The latest deployment refreshes the PWA shell cache version so installed clients can request the updated application shell.
 - The preceding application code deployment includes customer-service action-truth safeguards: `6c6412bfb2f2c060c5874cbaf25000fea8a8e892`.
 - Render service is configured for manual deployment; GitHub commits do not automatically deploy.
