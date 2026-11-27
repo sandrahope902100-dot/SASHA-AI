@@ -16,6 +16,7 @@ function SashaAI() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [installPrompt, setInstallPrompt] = useState(null);
 
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -31,6 +32,40 @@ function SashaAI() {
   useEffect(() => {
     voiceEnabledRef.current = voiceEnabled;
   }, [voiceEnabled]);
+
+  useEffect(() => {
+    const handleInstallPrompt = event => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(error => {
+          console.error("Sasha PWA service worker registration failed:", error);
+        });
+      }, { once: true });
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
+  }, []);
+
+  async function installSasha() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -603,6 +638,24 @@ function SashaAI() {
       letter-spacing: 2px;
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .install-button {
+      border: 1px solid #4dbdff;
+      background: linear-gradient(135deg, #147bc2, #173d78);
+      color: #ffffff;
+      padding: 10px 12px;
+      border-radius: 22px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
     .voice-toggle {
       border: 1px solid #438dca;
       background: #132b45;
@@ -611,6 +664,7 @@ function SashaAI() {
       border-radius: 22px;
       font-size: 12px;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .welcome {
@@ -793,14 +847,27 @@ function SashaAI() {
             </div>
           </div>
 
-          <button
-            className="voice-toggle"
-            onClick={toggleVoice}
-          >
-            {voiceEnabled
-              ? speaking ? "🔊 Speaking..." : "🔊 Voice ON"
-              : "🔇 Voice OFF"}
-          </button>
+          <div className="header-actions">
+            {installPrompt && (
+              <button
+                className="install-button"
+                onClick={installSasha}
+                type="button"
+              >
+                ⬇ Install
+              </button>
+            )}
+
+            <button
+              className="voice-toggle"
+              onClick={toggleVoice}
+              type="button"
+            >
+              {voiceEnabled
+                ? speaking ? "🔊 Speaking..." : "🔊 Voice ON"
+                : "🔇 Voice OFF"}
+            </button>
+          </div>
         </header>
 
         <section className="welcome">
