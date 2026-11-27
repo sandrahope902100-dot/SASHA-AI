@@ -6,6 +6,13 @@ const PORT = process.env.PORT || 10000;
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
+  next();
+});
 app.use(express.json({ limit: "64kb" }));
 
 const MODELS = [
@@ -383,7 +390,9 @@ app.post("/api/chat", chatRateLimit, async (req, res) => {
   }
 
   const controller = new AbortController();
+  let timedOut = false;
   const timeout = setTimeout(() => {
+    timedOut = true;
     console.error("Gemini request timed out.");
     controller.abort();
   }, 45000);
@@ -434,11 +443,15 @@ app.post("/api/chat", chatRateLimit, async (req, res) => {
 
     if (!res.headersSent) {
       res.status(503).json({
-        error: error.message || "Sasha could not complete the response. Please try again."
+        error: timedOut
+          ? "The AI service took too long to respond. Please try again."
+          : (error.message || "Sasha could not complete the response. Please try again.")
       });
     } else if (!res.writableEnded && !res.destroyed) {
       sendEvent(res, "error", {
-        error: error.message || "Sasha could not finish responding. Please try again."
+        error: timedOut
+          ? "The AI service took too long to respond. Please try again."
+          : (error.message || "Sasha could not finish responding. Please try again.")
       });
       res.end();
     }
@@ -463,7 +476,9 @@ async function generateSpeech(req, res) {
   }
 
   const controller = new AbortController();
+  let timedOut = false;
   const timeout = setTimeout(() => {
+    timedOut = true;
     console.error("Fish Audio request timed out.");
     controller.abort();
   }, 45000);
@@ -516,7 +531,9 @@ async function generateSpeech(req, res) {
     if (!controller.signal.aborted) console.error("Speech request failed: " + error.message);
     if (!res.headersSent && !res.destroyed) {
       res.status(503).json({
-        error: "Sasha's voice service could not respond. You can continue using text chat."
+        error: timedOut
+          ? "Voice generation took too long. You can continue using text chat."
+          : "Sasha's voice service could not respond. You can continue using text chat."
       });
     } else if (!res.destroyed && !res.writableEnded) {
       res.end();
