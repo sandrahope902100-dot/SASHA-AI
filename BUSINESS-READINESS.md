@@ -18,6 +18,7 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 - Latest confirmed deployment ID: `dep-dc4p7hgu01pc73et3e20`, state `live`
 - Additional hardening commits are now on GitHub but have NOT yet been deployed to Render.
 - Server startup log confirms: `Sasha AI running on port 10000`
+- The latest build no longer emits the earlier Vite config filename warning.
 - Health endpoint exists at `GET /healthz`.
 - Primary model configured in code: `gemini-3.1-flash-lite`.
 - Backup model configured in code: `gemini-3.5-flash-lite`.
