@@ -43,7 +43,7 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 4. **AI provider availability:** Gemini quota, model availability, latency, and upstream errors can interrupt responses. A backup model does not guarantee uninterrupted service.
 5. **Voice provider dependency:** the current code calls Fish Audio `s2.1-pro-free`. Fish Audio currently states that free access runs through 30 November 2026, with no SLA or latency guarantee, possible model-improvement data use, and possible restrictions for some commercial scenarios. Reconfirm terms or choose a supported paid/alternative provider before relying on voice after that date.
 6. **Rate-limit scope:** counters are in memory and suitable only for the current single-instance prototype. They are not distributed protection and need replacement before multi-instance or higher-volume use.
-7. **Dependency reproducibility:** dependencies in `package.json` include `latest` versions and the repository does not currently have a lockfile. Pin versions and commit a lockfile before a dependable production release.
+7. **Dependency reproducibility:** the Node runtime major is now pinned to `24.x` in `package.json`, but Vite, React, React DOM and the Vite React plugin still use `latest`; the repository has no lockfile. Exact dependency versions and a committed lockfile remain required before a dependable production release. The Node pin and audit-only changes are committed after the current manual Render deployment and are not yet deployed.
 8. **Observability:** request timing and safe operational telemetry need improvement. Logs must never include credentials or private customer conversations.
 9. **Health monitoring:** configure Render's health-check path to `/healthz` only after confirming that endpoint returns HTTP 200 on the live service.
 10. **Fresh acceptance testing:** the PWA cache refresh is deployed, but this does not prove every installed Android client refreshed successfully. Repeat mobile, voice, microphone, context and truthfulness tests.
@@ -109,7 +109,7 @@ The previous acceptance-test table remains open. No test is promoted to PASS wit
 
 ## 10. Required closure work
 1. Verify `/healthz` returns HTTP 200 and configure Render's health-check path to `/healthz` in the service dashboard.
-2. Pin runtime dependencies and commit a reproducible lockfile; review security advisories.
+2. Pin exact dependency versions, generate and commit a reproducible lockfile, then review security advisories. The Node `24.x` major pin is already in source but awaits the next manual deployment.
 3. Repeat Android Chrome, PWA install/update, microphone permission, text, voice, context, timeout, provider-failure and action-truthfulness tests.
 4. Test abuse limits and confirm safe logging without credentials or private conversation content.
 5. Establish a business-approved knowledge source and test unknown-answer handling.
@@ -142,7 +142,7 @@ The following items were checked against the current GitHub source and Render se
 
 ### Remaining engineering and commercial blockers
 1. Configure Render's health-check path to `/healthz` and independently verify its HTTP response. The endpoint reports process status and configuration flags; it does not prove Gemini or Fish Audio is reachable.
-2. Commit a lockfile and pin all runtime/build dependencies. Current `package.json` uses `latest` for Vite, React, React DOM and the Vite React plugin; the Render build command performs repeated `npm install` operations rather than a reproducible install.
+2. Commit a lockfile and pin all runtime/build dependencies. Current `package.json` still uses `latest` for Vite, React, React DOM and the Vite React plugin; the Node `24.x` major pin is committed but not yet deployed. The Render build command performs repeated `npm install` operations rather than a reproducible install.
 3. Review the Free-tier data handling of Gemini and Fish Audio. For customer use, select provider plans and settings that meet the business's privacy and contractual requirements.
 4. Re-test Android Chrome, PWA install/update, keyboard/scrolling, microphone permission and `en-JM` recognition, streamed text, voice playback, interruption, provider failures, timeout, rate limits and action-truthfulness.
 5. Confirm the Fish Audio free model's availability after 30 November 2026 or implement and test a clearly disclosed fallback. A browser/device voice fallback would not reproduce the cloned voice.
@@ -151,7 +151,7 @@ The following items were checked against the current GitHub source and Render se
 8. Do not call the product commercially ready until the above blockers and acceptance tests are closed.
 
 ### Current release decision
-**Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest code changes are not considered live until the manual Render deployment reports `live` and the startup logs are checked.
+**Supervised demonstration only. Not approved for paid, confidential-data, or unsupervised customer use.** The latest application runtime code deployment is live and startup logs were checked. Packaging-only changes (Node engine pin, `.gitignore` and audit documentation) were committed after that deployment and are not yet deployed; they do not change runtime behavior.
 
 
 ## 10. Provider and hosting notes — 27 November 2026
