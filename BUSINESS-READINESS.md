@@ -14,8 +14,8 @@ Live URL: https://sasha-ai-ttk7.onrender.com/
 ## 2. Verified deployment facts
 
 - Render service: `SASHA-AI`
-- Latest confirmed live deployment: `dep-dc4u2ujl550s73ao4g6g`
-- Latest live commit: `4d682411431d1710ad9027026e9afb586ebe3017`
+- Latest confirmed live deployment: `dep-dc4ut197lnhs739vr1cg` (27 November 2026, 20:57:03 UTC)
+- Latest deployment branch-head commit: `49a1ed210d73fe2b0cf153dd1c144988b00f7c7d`; application runtime source commit: `26464cfce26ef2644c151b2b00f9082b0764d36a`.
 - The latest deployment refreshes the PWA shell cache version so installed clients can request the updated application shell.
 - The preceding application code deployment includes customer-service action-truth safeguards: `6c6412bfb2f2c060c5874cbaf25000fea8a8e892`.
 - Render service is configured for manual deployment; GitHub commits do not automatically deploy.
@@ -99,7 +99,7 @@ Current Render configuration was rechecked:
 - Auto-deploy remains disabled; manual deployment is required after application commits.
 - Render service metadata still reports an empty health-check path. The Render connector available for this audit does not expose a service-settings update operation, so this was not changed.
 - The public `/healthz` endpoint has not been independently confirmed to return HTTP 200 in this audit. Do not mark health monitoring complete.
-- Latest confirmed live app deployment remains `dep-dc4u2ujl550s73ao4g6g` from commit `4d682411431d1710ad9027026e9afb586ebe3017`. No new Sasha AI application code was deployed as part of this audit.
+- Latest confirmed live app deployment is `dep-dc4ut197lnhs739vr1cg` from branch-head commit `49a1ed210d73fe2b0cf153dd1c144988b00f7c7d`; runtime source commit is `26464cfce26ef2644c151b2b00f9082b0764d36a`. The latest startup log sample shows the service live on port 10000, but this is not a direct HTTP health-check result.
 
 The previous acceptance-test table remains open. No test is promoted to PASS without a fresh, recorded test result. The launch decision remains **supervised demonstration only; not approved for paid or unsupervised business deployment**.
 
@@ -122,7 +122,7 @@ The following items were checked against the current GitHub source and Render se
 - Render's configured HTTP health-check path is still blank. The code contains `GET /healthz`, but no successful live HTTP response was independently recorded during this audit.
 - Latest service startup logs report the configured model defaults `gemini-3.1-flash-lite` and `gemini-3.5-flash-lite`, and report **Business profile: not configured**. This is therefore the general Sasha AI assistant, not a configured business assistant.
 - The latest audited source, including the browser speech-recognition privacy disclosure, was deployed successfully as Render deploy `dep-dc4ut197lnhs739vr1cg` from commit `49a1ed210d73fe2b0cf153dd1c144988b00f7c7d` at 20:57:03 UTC on 27 November 2026. Render logs show `Sasha AI running on port 10000`, both configured model names, `Business profile: not configured`, and `Your service is live`. The application source change is in commit `26464cfce26ef2644c151b2b00f9082b0764d36a`; the deployment also includes subsequent documentation updates.
-- The latest source now adds `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Permissions-Policy` response header.
+- The latest source now adds `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Permissions-Policy` response header. A `.gitignore` file was added to the repository to exclude `.env` files, dependency directories and build output; no hard-coded API key patterns were found in the reviewed source files and no `.env` file is present in the repository.
 - Chat and speech timeout failures now have explicit timeout messages instead of presenting a cancellation as the cause.
 - The app now discloses that messages go to Google Gemini, microphone transcription uses the browser/device speech-recognition provider, and reply text is sent to Fish Audio when voice is enabled. It also states that the app does not persist chat history and warns users not to enter sensitive or confidential information.
 - The frontend stores chat messages only in in-memory React state; a page refresh clears the visible conversation. The app has no user accounts or database-backed chat history.
