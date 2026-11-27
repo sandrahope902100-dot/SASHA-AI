@@ -121,6 +121,7 @@ The following items were checked against the current GitHub source and Render se
 - The deployed service is a Render Free web service in Oregon, one instance, with manual deployment enabled.
 - Render's configured HTTP health-check path is still blank. The code contains `GET /healthz`, but no successful live HTTP response was independently recorded during this audit.
 - Latest service startup logs report the configured model defaults `gemini-3.1-flash-lite` and `gemini-3.5-flash-lite`, and report **Business profile: not configured**. This is therefore the general Sasha AI assistant, not a configured business assistant.
+- The audited application commit `7c71c6d17252581acf856b64f22d8d417c897d96` was deployed successfully as Render deploy `dep-dc4upi15efls73ar00d0` at 20:49:36 UTC on 27 November 2026. Render logs show `Sasha AI running on port 10000`, both configured model names, `Business profile: not configured`, and `Your service is live`. The later README/readiness-document commits do not change application runtime code.
 - The latest source now adds `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Permissions-Policy` response header.
 - Chat and speech timeout failures now have explicit timeout messages instead of presenting a cancellation as the cause.
 - The app now discloses that messages go to Google Gemini and that reply text is sent to Fish Audio when voice is enabled. It also states that the app does not persist chat history and warns users not to enter sensitive or confidential information.
