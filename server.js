@@ -523,6 +523,20 @@ app.get("/healthz", (req, res) => {
   });
 });
 
+app.get("/api/config", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.status(200).json({
+    productName: "Sasha AI",
+    parentBrand: "ORBITAL X FUTURE",
+    businessMode: Boolean(BUSINESS_PROFILE),
+    businessName: BUSINESS_PROFILE ? BUSINESS_PROFILE.name : null,
+    businessDescription: BUSINESS_PROFILE ? BUSINESS_PROFILE.description : "",
+    publicPhone: BUSINESS_PROFILE ? BUSINESS_PROFILE.publicPhone : "",
+    publicEmail: BUSINESS_PROFILE ? BUSINESS_PROFILE.publicEmail : "",
+    website: BUSINESS_PROFILE ? BUSINESS_PROFILE.website : ""
+  });
+});
+
 app.use(express.static(path.join(__dirname, "dist")));
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
