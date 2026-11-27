@@ -17,6 +17,7 @@ function SashaAI() {
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [businessConfig, setBusinessConfig] = useState(null);
 
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -32,6 +33,24 @@ function SashaAI() {
   useEffect(() => {
     voiceEnabledRef.current = voiceEnabled;
   }, [voiceEnabled]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetch("/api/config", { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error("Business configuration unavailable.");
+        return response.json();
+      })
+      .then(config => setBusinessConfig(config))
+      .catch(error => {
+        if (error.name !== "AbortError") {
+          console.error("Sasha business configuration could not load:", error);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const handleInstallPrompt = event => {
@@ -843,7 +862,7 @@ function SashaAI() {
             <img className="orb" src="/sasha-avatar.jpg" alt="Sasha AI" />
             <div>
               <h1>SASHA AI</h1>
-              <small>YOUR AI COMPANION</small>
+              <small>{businessConfig?.businessMode ? "AI CUSTOMER ASSISTANT" : "YOUR AI COMPANION"}</small>
             </div>
           </div>
 
@@ -871,11 +890,15 @@ function SashaAI() {
         </header>
 
         <section className="welcome">
-          <h2>Hey, I'm Sasha 💙</h2>
-          <p>Your intelligent Jamaican AI assistant.</p>
+          <h2>{businessConfig?.businessMode ? "Welcome to " + businessConfig.businessName : "Hey, I'm Sasha 💙"}</h2>
+          <p>{businessConfig?.businessMode && businessConfig.businessDescription
+            ? businessConfig.businessDescription
+            : "Your intelligent Jamaican AI assistant."}</p>
 
           <div className="status">
-            ● ONLINE • READY TO CHAT
+            {businessConfig?.businessMode
+              ? "BUSINESS MODE • POWERED BY SASHA AI"
+              : "POWERED BY ORBITAL X FUTURE"}
           </div>
 
           {voiceError && (
@@ -957,7 +980,7 @@ function SashaAI() {
           </form>
 
           <div className="footer">
-            SASHA AI • POWERED BY ARTIFICIAL INTELLIGENCE
+            SASHA AI • POWERED BY ORBITAL X FUTURE
           </div>
         </footer>
       </div>
