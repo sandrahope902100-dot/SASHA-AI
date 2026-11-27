@@ -573,9 +573,22 @@ function SashaAI() {
     .orb {
       width: 47px;
       height: 47px;
+      flex-shrink: 0;
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #fff, #54caff 35%, #1760a9 70%, #101d35);
+      object-fit: cover;
+      border: 2px solid #55caff;
       box-shadow: 0 0 20px #299bff88;
+    }
+
+    .assistant-avatar {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid #55caff;
+      box-shadow: 0 0 12px #299bff66;
+      margin: 2px 8px 0 0;
     }
 
     .brand h1 {
@@ -773,7 +786,7 @@ function SashaAI() {
       <div className="app">
         <header className="header">
           <div className="brand">
-            <div className="orb"></div>
+            <img className="orb" src="/sasha-avatar.jpg" alt="Sasha AI" />
             <div>
               <h1>SASHA AI</h1>
               <small>YOUR AI COMPANION</small>
@@ -811,6 +824,9 @@ function SashaAI() {
               className={`message ${item.role}`}
               key={index}
             >
+              {item.role === "assistant" && (
+                <img className="assistant-avatar" src="/sasha-avatar.jpg" alt="Sasha AI" />
+              )}
               <div className="bubble">
                 {item.text || (
                   loading && index === messages.length - 1
