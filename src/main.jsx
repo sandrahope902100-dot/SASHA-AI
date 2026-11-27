@@ -6,7 +6,7 @@ function SashaAI() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "Hey! I'm Sasha AI. Wah gwaan? I'm ready to chat, answer questions and help you get things done. You can type or use the microphone to talk to me."
+      text: "Wah gwaan! I’m Sasha AI. How can I help you today?"
     }
   ]);
 
