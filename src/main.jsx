@@ -387,10 +387,10 @@ function SashaAI() {
         }
 
         // Prevent unusually long chunks if a sentence is very long.
-        if (speechBuffer.length >= 300) {
-          const splitAt = speechBuffer.lastIndexOf(" ", 260);
+        if (speechBuffer.length >= 150) {
+          const splitAt = speechBuffer.lastIndexOf(" ", 125);
 
-          if (splitAt > 100) {
+          if (splitAt > 70) {
             queueSpeech(
               speechBuffer.slice(0, splitAt).trim()
             );
