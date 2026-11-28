@@ -158,3 +158,20 @@ The following items were checked against the current GitHub source and Render se
 - Render health-check path is blank; `/healthz` exists in code but has not been independently verified over HTTP.
 - Recent startup logs show the process listening on port 10000 and Render reporting the service live; the retrieved recent log sample contained no application error entries. This does not replace a direct HTTP health check.
 - The startup log states that no business profile is configured. Sasha is therefore running as a general assistant, not as an owner-approved customer-service assistant for a particular business.
+
+## 10. Recheck — 28 November 2026
+
+The following were rechecked against the connected Render service, current repository files and recent application logs:
+
+- The latest deployed version is still deployment `dep-dc4ut197lnhs739vr1cg` from 27 November 2026. Render remains configured for manual deployment, so later GitHub changes do not reach production automatically.
+- The Render service remains on the Free plan, with one instance in Oregon. Its `healthCheckPath` is still unset even though the server implements `/healthz`. The endpoint's code returns HTTP 200, but a fresh external HTTP acceptance test remains pending.
+- Recent logs include Gemini HTTP 503 responses and request timeouts, alongside successful responses on subsequent requests. This confirms intermittent upstream availability, not a stable response-time guarantee.
+- Sampled Render metrics showed low CPU use and memory around 65–66 MB. HTTP request-count and latency metrics were not returned for the sampled window; this is not proof of end-to-end performance.
+- `package.json` still uses `latest` for Vite, React, React DOM and the Vite React plugin. No `package-lock.json` or npm shrinkwrap file is present. Pin exact compatible versions and commit a lockfile before a dependable production build.
+- The PWA manifest still declares only one JPEG icon with `sizes: any`. Standard 192×192 and 512×512 install icons and fresh Android install verification remain outstanding.
+- The business profile is not configured in the current Render service. Sasha AI is therefore operating as a general assistant demonstration, not a configured business customer-service agent.
+- The server's per-IP rate limits remain in-memory. There is no shared limiter or global daily/monthly provider-spend cap. Keep the service to supervised demonstration use until abuse controls and a cost ceiling are in place.
+- Fish Audio's current S2.1 Pro Free announcement says free access is available through 30 November 2026 and provides no SLA or latency guarantee; it also notes possible model-improvement use of requests and restrictions for some commercial scenarios. Recheck the provider's terms before relying on voice from 1 December onward: [Fish Audio S2.1 Pro Free announcement](https://fish.audio/blog/s2-1-pro-free-api/).
+- Static parsing of `server.js`, `package.json` and the PWA manifest passed. This is not a substitute for a full Render build, live HTTP checks or Android voice/microphone acceptance testing.
+
+**Decision remains unchanged: supervised demonstration only; not approved for paid or unsupervised business use.**
